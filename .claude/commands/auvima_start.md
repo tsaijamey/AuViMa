@@ -39,13 +39,13 @@ projects/<project_name>/
 
 ## 可用工具
 
-### Chrome CDP脚本
-- `scripts/share/cdp_navigate.sh` - 导航网页
-- `scripts/share/cdp_get_content.sh` - 提取内容
-- `scripts/share/cdp_screenshot.sh` - 截图（必须使用绝对路径）
-- `scripts/share/cdp_scroll.sh` - 滚动页面
-- `scripts/share/cdp_click.sh` - 点击元素
-- `scripts/share/cdp_wait.sh` - 等待加载
+### Chrome CDP命令（通过Python CLI）
+- `uv run auvima navigate <url>` - 导航网页
+- `uv run auvima get-content [--selector <selector>]` - 提取内容
+- `uv run auvima screenshot <output_file>` - 截图（必须使用绝对路径）
+- `uv run auvima scroll [--pixels <px>] [--direction <up/down>]` - 滚动页面
+- `uv run auvima click <selector>` - 点击元素
+- `uv run auvima wait <seconds>` - 等待加载
 
 ### 其他工具
 - Git克隆和分析

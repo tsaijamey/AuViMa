@@ -28,8 +28,8 @@
 # 预计时长：15秒
 
 # 准备阶段（不录制）
-./scripts/share/cdp_navigate.sh "https://github.com"
-./scripts/share/cdp_wait.sh "main" 3
+uv run auvima navigate "https://github.com"
+uv run auvima wait 3
 sleep 2
 
 # 开始录制标记
@@ -48,21 +48,21 @@ sleep 1  # 确保录制开始
 
 # === 执行展示动作 ===
 # 高亮重要元素（3秒）
-./scripts/generate/cdp_spotlight.sh ".Header-link"
+uv run auvima spotlight ".Header-link"
 sleep 3
 
 # 滚动展示内容（5秒）
-./scripts/share/cdp_scroll.sh 300 down
+uv run auvima scroll --pixels 300 --direction down
 sleep 2
-./scripts/share/cdp_scroll.sh 300 down
+uv run auvima scroll --pixels 300 --direction down
 sleep 3
 
 # 点击并展示功能（5秒）
-./scripts/share/cdp_click.sh "a[href='/features']"
-./scripts/share/cdp_wait.sh ".features-section" 5
+uv run auvima click "a[href='/features']"
+uv run auvima wait 5
 
 # 清理效果（2秒）
-./scripts/generate/cdp_clear_effects.sh
+uv run auvima clear-effects
 sleep 2
 
 # 结束录制
@@ -91,13 +91,13 @@ fi
 #### 动作时长控制
 ```bash
 # 每个动作都要精确控制时长
-./scripts/generate/cdp_highlight.sh ".button" "#ff0000"
+uv run auvima highlight ".button"
 sleep 3  # 保持高亮3秒
 
-./scripts/generate/cdp_pointer.sh "#submit-btn" 
+uv run auvima pointer "#submit-btn"
 sleep 2  # 指针动画2秒
 
-./scripts/share/cdp_scroll.sh 500 down
+uv run auvima scroll --pixels 500 --direction down
 sleep 1  # 滚动后停留1秒便于观看
 ```
 
@@ -111,13 +111,13 @@ sleep 1  # 滚动后停留1秒便于观看
 #### 录制前检查
 ```bash
 # 检查Chrome是否就绪
-./scripts/share/cdp_status.sh
+uv run auvima status
 
 # 检查目标页面是否可访问
 curl -I "$TARGET_URL"
 
 # 清理之前的效果
-./scripts/generate/cdp_clear_effects.sh
+uv run auvima clear-effects
 ```
 
 #### 录制中监控
@@ -142,18 +142,18 @@ ffmpeg -i clips/shot_xxx.mp4 -vf "select='eq(n,0)+eq(n,150)+eq(n,300)'" \
 ## 可用工具集
 
 ### 导航和内容工具
-- `cdp_navigate.sh <url>` - 导航到页面
-- `cdp_wait.sh <selector> [timeout]` - 等待元素出现
-- `cdp_scroll.sh [pixels] [direction]` - 滚动页面
-- `cdp_click.sh <selector>` - 点击元素
+- `uv run auvima navigate <url>` - 导航到页面
+- `uv run auvima wait <seconds>` - 等待指定秒数
+- `uv run auvima scroll [--pixels <px>] [--direction <up/down>]` - 滚动页面
+- `uv run auvima click <selector>` - 点击元素
 
 ### 视觉引导工具（录制时使用）
-- `cdp_highlight.sh <selector> [color]` - 高亮边框
-- `cdp_spotlight.sh <selector>` - 聚光灯效果
-- `cdp_annotate.sh <selector> <text>` - 添加说明文字
-- `cdp_pointer.sh <selector>` - 模拟鼠标指向
-- `cdp_zoom.sh <selector> [scale]` - 放大展示
-- `cdp_clear_effects.sh` - 清除所有效果
+- `uv run auvima highlight <selector>` - 高亮边框
+- `uv run auvima spotlight <selector>` - 聚光灯效果
+- `uv run auvima annotate <selector> <text>` - 添加说明文字
+- `uv run auvima pointer <selector>` - 模拟鼠标指向
+- `uv run auvima zoom <factor>` - 设置页面缩放比例
+- `uv run auvima clear-effects` - 清除所有效果
 
 ### 录制工具
 ```bash
