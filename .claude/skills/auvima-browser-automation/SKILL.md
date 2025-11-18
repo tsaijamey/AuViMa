@@ -5,536 +5,874 @@ description: 使用AuViMa CLI自动化浏览器操作。当需要网页数据采
 
 # AuViMa Browser Automation Skill
 
-## Instructions
+## 快速参考
 
-你是一个AuViMa浏览器自动化专家，精通使用AuViMa CLI进行网页操作、数据采集和UI自动化。
+**在动手前必读**：
 
-### 核心原则
-
-- ⚠️ **每个操作后必须验证结果** - 通过 `get-title`、`get-content` 或 `exec-js` 检查操作是否成功
-- 📋 **先探索DOM结构** - 使用 `exec-js` 获取HTML片段，找到正确的选择器
-- 🔄 **适当等待** - 页面加载、JavaScript渲染都需要 `wait` 命令
-- 📸 **关键步骤截图** - 便于调试和验证
+1. ⚠️ **先分析任务**：理解关键概念，分解子任务，规划路径（见"任务理解与执行策略"）
+2. 👁️ **你是瞎子**：必须通过工具感知，禁止凭经验猜测
+3. 🎯 **目标导向**：每步操作都要问"这是为了什么目标？是否更接近了？"
+4. 🔍 **系统性感知**：页面跳转后必须 `get-content` + `screenshot`
+5. 🚫 **禁止原地踏步**：失败时分析原因，调整策略，不要重复无效操作
 
 ---
 
-## 场景1: YouTube - 查找特定主题的最新视频
+## 核心理念
 
-**需求**: 在YouTube上搜索"AI tutorial"，获取前5个视频的标题和链接。
+### 1. 你是一个瞎子
 
-### 实现步骤
+**CRITICAL**: 你实际上是个瞎子，对浏览器中显示的内容一无所知。
+
+- ❌ **禁止凭经验判断**：不要假设页面结构、元素位置、加载状态
+- ✅ **必须通过工具感知**：每一步操作前，先用工具获取精确信息
+- ✅ **验证每个假设**：想要点击某个按钮？先确认它存在、可见、可点击
+
+### 2. 你必须理解任务目标
+
+**CRITICAL**: 在开始操作前，必须正确理解用户的真实需求。
+
+- ❌ **禁止盲目操作**：不要看到关键词就开始点击
+- ✅ **先分析任务**：识别关键概念、理解最终目标、规划路径
+- ✅ **每步对齐目标**：操作后检查"这是否让我更接近目标？"
+
+---
+
+## 任务理解与执行策略
+
+### 步骤 0: 任务分析（在动手前完成）
+
+**目的**：避免理解错误导致南辕北辙
+
+#### 分析清单
+
+1. **识别关键概念**
+   - 用户提到的专有名词是什么意思？
+   - 这些概念在目标平台上的对应功能是什么？
+
+   示例：
+   ```
+   用户需求："检查我的提醒消息，帮我看看最近的3个提醒"
+
+   关键概念分析：
+   - "提醒消息" ≠ "历史记录"
+   - "提醒消息" = YouTube 的通知功能（Notifications）
+   - 需要找的是通知列表，不是观看历史
+   ```
+
+2. **识别平台特定功能**
+   - 用户描述的功能在平台上叫什么？
+   - 如何访问这个功能？
+
+   示例：
+   ```
+   用户需求："切换到内容台词，然后把内容台词扒下来"
+
+   功能分析：
+   - "内容台词" = YouTube 视频的字幕/转录文本（Transcript）
+   - 功能位置：视频下方，"Show transcript" 或 "···" 菜单中的 "Show transcript"
+   - 输出形式：带时间戳的文本列表
+   ```
+
+3. **分解子任务**
+   - 最终目标是什么？
+   - 需要哪些中间步骤？
+   - 每个步骤的成功标准是什么？
+
+   示例：
+   ```
+   最终目标：获取最近3个通知对应视频的完整台词，并总结
+
+   子任务分解：
+   1. 打开 YouTube 通知页面（成功：看到通知列表）
+   2. 识别最近3个通知（成功：提取到3个视频链接）
+   3. 逐个打开视频（成功：进入视频播放页）
+   4. 找到并打开 Transcript 功能（成功：看到字幕文本）
+   5. 提取完整台词文本（成功：获得完整文本）
+   6. 重复步骤3-5，共3次
+   7. 分析台词并总结
+   ```
+
+4. **识别未知领域**
+   - 我是否熟悉这个平台？
+   - 我是否知道如何访问用户提到的功能？
+   - 如果不知道，需要先探索学习
+
+   示例：
+   ```
+   未知领域：
+   - ❓ YouTube 通知在哪里？ → 需要先打开 YouTube，感知界面，找到通知入口
+   - ❓ Transcript 功能如何打开？ → 需要打开任意视频，探索界面，找到 Transcript
+   ```
+
+### 执行策略：目标导向
+
+**核心原则**：每个操作都要回答"这一步是为了什么目标？完成后如何验证？"
+
+#### 执行流程
+
+```
+对于每个子任务：
+  1. 明确目标：这一步要达成什么？
+  2. 感知现状：我现在在哪里？
+  3. 规划操作：需要做什么才能达成目标？
+  4. 执行操作：使用工具完成操作
+  5. 验证结果：是否达成目标？
+  6. 如果失败：
+     - 分析原因：为什么没达成目标？
+     - 调整策略：需要换个思路吗？
+     - 重新尝试或求助
+```
+
+#### 示例：目标导向执行
 
 ```bash
-# Step 1: 导航到YouTube
+# 子任务 1: 打开 YouTube 通知页面
+# 目标：看到通知列表
+
+# 步骤 1: 感知现状
 uv run auvima navigate https://youtube.com
+uv run auvima get-content > youtube_home.html
+uv run auvima screenshot youtube_home.png
 
-# Step 2: 等待页面加载
-uv run auvima wait 3
+# 步骤 2: 分析 youtube_home.html 和 youtube_home.png
+# 问：通知入口在哪里？
+# 答：通常是右上角的铃铛图标
 
-# Step 3: 验证页面加载成功
-uv run auvima get-title
-# 预期输出: YouTube 或类似标题
+# 步骤 3: 尝试定位通知按钮
+uv run auvima exec-js "Array.from(document.querySelectorAll('button, a')).filter(el => el.getAttribute('aria-label')?.includes('Notification') || el.getAttribute('title')?.includes('Notification')).map(el => ({tag: el.tagName, aria: el.getAttribute('aria-label'), class: el.className}))" --return-value
+# 输出：找到 aria-label="Notifications" 的按钮
 
-# Step 4: 探索搜索框的选择器（首次需要）
-uv run auvima exec-js "document.querySelector('input[name=\"search_query\"]') ? 'found' : 'not found'" --return-value
-# 预期输出: found
+# 步骤 4: 点击通知按钮
+uv run auvima click "button[aria-label='Notifications']"
 
-# Step 5: 点击搜索框
-uv run auvima click "input[name='search_query']"
-uv run auvima wait 0.5
+# 步骤 5: 验证结果
+uv run auvima screenshot notifications_opened.png
+uv run auvima exec-js "document.querySelector('[role=\"menu\"]') || document.querySelector('.notification') ? 'notifications panel opened' : 'not found'" --return-value
 
-# Step 6: 输入搜索关键词
-uv run auvima exec-js "document.querySelector('input[name=\"search_query\"]').value='AI tutorial'"
-
-# Step 7: 验证输入成功
-uv run auvima exec-js "document.querySelector('input[name=\"search_query\"]').value" --return-value
-# 预期输出: AI tutorial
-
-# Step 8: 点击搜索按钮
-uv run auvima click "button#search-icon-legacy"
-
-# Step 9: 等待搜索结果加载
-uv run auvima wait 3
-
-# Step 10: 验证进入搜索结果页
-uv run auvima get-title
-# 预期输出包含: AI tutorial
-
-# Step 11: 检查视频数量
-uv run auvima exec-js "document.querySelectorAll('ytd-video-renderer').length" --return-value
-# 预期输出: 数字 (如 20)
-
-# Step 12: 提取前5个视频的标题
-uv run auvima exec-js "Array.from(document.querySelectorAll('ytd-video-renderer')).slice(0, 5).map((v, i) => ({index: i+1, title: v.querySelector('#video-title')?.textContent?.trim() || 'N/A'})).map(v => v.index + '. ' + v.title).join('\\n')" --return-value
-
-# Step 13: 提取前5个视频的链接
-uv run auvima exec-js "Array.from(document.querySelectorAll('ytd-video-renderer')).slice(0, 5).map((v, i) => ({index: i+1, url: v.querySelector('#video-title')?.href || 'N/A'})).map(v => v.index + '. ' + v.url).join('\\n')" --return-value
-
-# Step 14: 截图保存结果
-uv run auvima screenshot youtube_ai_tutorial_search.png --full-page
+# 如果失败：
+# - 检查截图，通知面板是否打开？
+# - 如果没打开，尝试其他 selector
+# - 如果找不到通知按钮，可能需要先登录
 ```
 
-### 关键点
+### 探索未知功能策略
 
-1. **每次操作后验证**: 输入后检查value，点击后检查页面变化
-2. **适当等待**: 搜索结果需要3秒加载时间
-3. **使用复杂JavaScript提取数据**: 结合 `Array.from`、`map`、`slice` 等方法
+**场景**：不知道某个功能在哪里 / 如何访问
 
----
-
-## 场景2: GitHub - 查找某个仓库的最新Issues
-
-**需求**: 访问某个GitHub仓库，获取最新的5个open issues。
-
-### 实现步骤
+#### 策略 1: 视觉搜索
 
 ```bash
-# Step 1: 导航到仓库Issues页面
-uv run auvima navigate https://github.com/anthropics/claude-code/issues
+# 1. 截图整个页面
+uv run auvima screenshot full_page.png --full-page
 
-# Step 2: 等待页面加载
-uv run auvima wait 2
-
-# Step 3: 验证页面加载
-uv run auvima get-title
-# 预期输出包含: Issues
-
-# Step 4: 探索Issues列表的DOM结构
-uv run auvima exec-js "document.querySelector('.js-navigation-container') ? 'found container' : 'not found'" --return-value
-# 预期输出: found container
-
-# Step 5: 获取Issues数量
-uv run auvima exec-js "document.querySelectorAll('.js-navigation-item').length" --return-value
-
-# Step 6: 提取前5个Issues的标题和链接
+# 2. 搜索包含关键词的元素
 uv run auvima exec-js "
-Array.from(document.querySelectorAll('.js-navigation-item')).slice(0, 5).map((item, i) => {
-  const title = item.querySelector('.js-navigation-open')?.textContent?.trim() || 'N/A';
-  const url = item.querySelector('.js-navigation-open')?.href || 'N/A';
-  const number = item.querySelector('.opened-by')?.textContent?.match(/#\\d+/)?.[0] || 'N/A';
-  return (i+1) + '. ' + number + ' - ' + title + '\\n   URL: ' + url;
-}).join('\\n\\n')
-" --return-value
-
-# Step 7: 检查第一个Issue的状态
-uv run auvima exec-js "
-document.querySelector('.js-navigation-item .State')?.textContent?.trim() || 'unknown'
-" --return-value
-# 预期输出: Open
-
-# Step 8: 截图保存
-uv run auvima screenshot github_issues.png --full-page
-```
-
----
-
-## 场景3: 电商网站 - 获取产品列表和价格
-
-**需求**: 访问电商网站，获取某个类别的产品名称和价格。
-
-### 实现步骤
-
-```bash
-# Step 1: 导航到产品列表页
-uv run auvima navigate https://example-shop.com/products/electronics
-
-# Step 2: 等待页面和JavaScript渲染
-uv run auvima wait 3
-
-# Step 3: 探索DOM结构
-uv run auvima exec-js "document.body.innerHTML.substring(0, 2000)" --return-value
-
-# Step 4: 识别产品卡片选择器（假设为 .product-card）
-uv run auvima exec-js "document.querySelectorAll('.product-card').length" --return-value
-
-# Step 5: 高亮第一个产品（调试用）
-uv run auvima highlight ".product-card:first-child" --color green --width 3
-uv run auvima screenshot first_product_highlighted.png
-
-# Step 6: 提取产品信息
-uv run auvima exec-js "
-Array.from(document.querySelectorAll('.product-card')).slice(0, 10).map((card, i) => {
-  const name = card.querySelector('.product-name')?.textContent?.trim() || 'N/A';
-  const price = card.querySelector('.product-price')?.textContent?.trim() || 'N/A';
-  const rating = card.querySelector('.product-rating')?.textContent?.trim() || 'N/A';
-  return (i+1) + '. ' + name + ' | Price: ' + price + ' | Rating: ' + rating;
-}).join('\\n')
-" --return-value
-
-# Step 7: 验证提取的数据
-uv run auvima exec-js "
-document.querySelector('.product-card .product-name')?.textContent?.trim() || 'not found'
-" --return-value
-
-# Step 8: 滚动加载更多产品（如果是无限滚动）
-uv run auvima scroll 1000
-uv run auvima wait 2
-
-# Step 9: 再次检查产品数量
-uv run auvima exec-js "document.querySelectorAll('.product-card').length" --return-value
-```
-
----
-
-## 场景4: 新闻网站 - 获取今日头条
-
-**需求**: 访问新闻网站，获取首页头条新闻的标题和摘要。
-
-### 实现步骤
-
-```bash
-# Step 1: 导航
-uv run auvima navigate https://news.ycombinator.com
-
-# Step 2: 等待加载
-uv run auvima wait 2
-
-# Step 3: 验证页面
-uv run auvima get-title
-# 预期输出: Hacker News
-
-# Step 4: 探索新闻条目结构
-uv run auvima exec-js "document.querySelector('.athing') ? 'found' : 'not found'" --return-value
-
-# Step 5: 统计新闻数量
-uv run auvima exec-js "document.querySelectorAll('.athing').length" --return-value
-
-# Step 6: 提取前10条新闻
-uv run auvima exec-js "
-Array.from(document.querySelectorAll('.athing')).slice(0, 10).map((item, i) => {
-  const rank = item.querySelector('.rank')?.textContent || (i+1);
-  const title = item.querySelector('.titleline > a')?.textContent?.trim() || 'N/A';
-  const url = item.querySelector('.titleline > a')?.href || 'N/A';
-  return rank + ' ' + title + '\\n   URL: ' + url;
-}).join('\\n\\n')
-" --return-value
-
-# Step 7: 获取第一条新闻的评论数
-uv run auvima exec-js "
-document.querySelector('.athing + tr .subtext a:last-child')?.textContent?.trim() || '0 comments'
-" --return-value
-
-# Step 8: 截图
-uv run auvima screenshot hackernews_frontpage.png
-```
-
----
-
-## 场景5: 表单填写和提交
-
-**需求**: 自动填写网页表单并提交。
-
-### 实现步骤
-
-```bash
-# Step 1: 导航到表单页面
-uv run auvima navigate https://example.com/contact
-
-# Step 2: 等待加载
-uv run auvima wait 2
-
-# Step 3: 探索表单字段
-uv run auvima exec-js "
-Array.from(document.querySelectorAll('input, textarea')).map(el => ({
-  name: el.name || el.id,
-  type: el.type,
-  placeholder: el.placeholder
+Array.from(document.querySelectorAll('button, a, [role=\"button\"]')).filter(el =>
+  el.textContent.toLowerCase().includes('transcript') ||
+  el.textContent.toLowerCase().includes('字幕') ||
+  el.getAttribute('aria-label')?.toLowerCase().includes('transcript')
+).map(el => ({
+  text: el.textContent.trim().substring(0, 50),
+  aria: el.getAttribute('aria-label'),
+  class: el.className
 }))
 " --return-value
 
-# Step 4: 填写姓名字段
-uv run auvima exec-js "document.querySelector('input[name=\"name\"]').value='John Doe'"
-
-# Step 5: 验证姓名已填写
-uv run auvima exec-js "document.querySelector('input[name=\"name\"]').value" --return-value
-# 预期输出: John Doe
-
-# Step 6: 填写邮箱
-uv run auvima exec-js "document.querySelector('input[name=\"email\"]').value='john@example.com'"
-
-# Step 7: 验证邮箱
-uv run auvima exec-js "document.querySelector('input[name=\"email\"]').value" --return-value
-# 预期输出: john@example.com
-
-# Step 8: 填写消息
-uv run auvima exec-js "document.querySelector('textarea[name=\"message\"]').value='This is a test message'"
-
-# Step 9: 验证消息
-uv run auvima exec-js "document.querySelector('textarea[name=\"message\"]').value" --return-value
-
-# Step 10: 高亮提交按钮（确认找对了）
-uv run auvima highlight "button[type='submit']" --color red --width 5
-uv run auvima screenshot form_ready_to_submit.png
-
-# Step 11: 点击提交（如果需要）
-# uv run auvima click "button[type='submit']"
-
-# Step 12: 等待提交处理
-# uv run auvima wait 2
-
-# Step 13: 验证提交成功（检查成功消息）
-# uv run auvima exec-js "document.querySelector('.success-message')?.textContent?.trim() || 'no message'" --return-value
+# 3. 如果找到，验证并点击
+# 4. 如果没找到，尝试打开菜单（通常是 "···" 或 "More" 按钮）
 ```
 
----
-
-## 场景6: 视频平台 - 批量收集视频元数据
-
-**需求**: 访问YouTube频道，获取所有视频的发布时间和观看次数。
-
-### 实现步骤
+#### 策略 2: 菜单探索
 
 ```bash
-# Step 1: 导航到频道视频页面
-uv run auvima navigate https://www.youtube.com/@channelname/videos
-
-# Step 2: 等待加载
-uv run auvima wait 3
-
-# Step 3: 验证页面
-uv run auvima get-title
-
-# Step 4: 滚动加载更多视频
-uv run auvima scroll 1000
-uv run auvima wait 2
-uv run auvima scroll 1000
-uv run auvima wait 2
-
-# Step 5: 检查视频数量
-uv run auvima exec-js "document.querySelectorAll('ytd-grid-video-renderer').length" --return-value
-
-# Step 6: 提取视频元数据
+# 1. 找到所有菜单按钮
 uv run auvima exec-js "
-Array.from(document.querySelectorAll('ytd-grid-video-renderer')).map((video, i) => {
-  const title = video.querySelector('#video-title')?.textContent?.trim() || 'N/A';
-  const views = video.querySelector('#metadata-line span:first-child')?.textContent?.trim() || 'N/A';
-  const date = video.querySelector('#metadata-line span:last-child')?.textContent?.trim() || 'N/A';
-  const duration = video.querySelector('.ytd-thumbnail-overlay-time-status-renderer')?.textContent?.trim() || 'N/A';
-  return (i+1) + '. ' + title + '\\n   Views: ' + views + ' | Date: ' + date + ' | Duration: ' + duration;
-}).join('\\n\\n')
+Array.from(document.querySelectorAll('button')).filter(el =>
+  el.textContent.includes('···') ||
+  el.textContent.includes('More') ||
+  el.getAttribute('aria-label')?.includes('More') ||
+  el.getAttribute('aria-label')?.includes('menu')
+).map(el => ({text: el.textContent, aria: el.getAttribute('aria-label')}))
 " --return-value
 
-# Step 7: 筛选最新视频（发布在1周内）
+# 2. 点击菜单
+uv run auvima click "button[aria-label*='More']"
+
+# 3. 截图查看菜单内容
+uv run auvima screenshot menu_opened.png
+
+# 4. 提取菜单项
 uv run auvima exec-js "
-Array.from(document.querySelectorAll('ytd-grid-video-renderer')).filter(video => {
-  const date = video.querySelector('#metadata-line span:last-child')?.textContent?.trim() || '';
-  return date.includes('day') || date.includes('hour') || date.includes('minute');
-}).map(video => video.querySelector('#video-title')?.textContent?.trim()).join('\\n')
-" --return-value
-
-# Step 8: 截图
-uv run auvima screenshot youtube_channel_videos.png --full-page
-```
-
----
-
-## 场景7: 动态内容 - 等待AJAX加载完成
-
-**需求**: 处理单页应用(SPA)中的动态内容加载。
-
-### 实现步骤
-
-```bash
-# Step 1: 导航到SPA页面
-uv run auvima navigate https://example-spa.com/dashboard
-
-# Step 2: 等待初始加载
-uv run auvima wait 2
-
-# Step 3: 检查加载指示器
-uv run auvima exec-js "document.querySelector('.loading-spinner') ? 'loading' : 'loaded'" --return-value
-
-# Step 4: 循环等待直到内容加载（使用更智能的检查）
-uv run auvima exec-js "
-(function checkLoading() {
-  const spinner = document.querySelector('.loading-spinner');
-  const content = document.querySelector('.content-loaded');
-  return spinner ? 'still loading' : (content ? 'loaded' : 'unknown state');
-})()
-" --return-value
-
-# Step 5: 等待特定元素出现
-uv run auvima wait 3
-
-# Step 6: 再次验证
-uv run auvima exec-js "document.querySelector('.data-table') ? 'table found' : 'table not found'" --return-value
-
-# Step 7: 提取数据
-uv run auvima exec-js "
-Array.from(document.querySelectorAll('.data-table tbody tr')).map((row, i) => {
-  const cells = Array.from(row.querySelectorAll('td')).map(td => td.textContent.trim());
-  return (i+1) + '. ' + cells.join(' | ');
-}).join('\\n')
+Array.from(document.querySelectorAll('[role=\"menuitem\"], [role=\"option\"]')).map(el => ({
+  text: el.textContent.trim()
+}))
 " --return-value
 ```
 
----
-
-## 场景8: 分页浏览和数据聚合
-
-**需求**: 浏览多页内容，聚合所有页面的数据。
-
-### 实现步骤
+#### 策略 3: HTML 深度搜索
 
 ```bash
-# Step 1: 导航到第一页
-uv run auvima navigate https://example.com/products?page=1
-
-# Step 2: 等待加载
-uv run auvima wait 2
-
-# Step 3: 提取第一页数据
+# 搜索 HTML 中包含关键词的所有元素
 uv run auvima exec-js "
-Array.from(document.querySelectorAll('.product-item')).map(item =>
-  item.querySelector('.product-name')?.textContent?.trim()
-).join('\\n')
+document.body.innerHTML.match(/transcript/gi) ? 'found keyword in HTML' : 'not found'
 " --return-value
 
-# Step 4: 检查是否有下一页按钮
-uv run auvima exec-js "document.querySelector('.next-page') ? 'has next' : 'no next'" --return-value
-
-# Step 5: 点击下一页
-uv run auvima click ".next-page"
-
-# Step 6: 等待第二页加载
-uv run auvima wait 2
-
-# Step 7: 验证页面切换（检查URL变化）
-uv run auvima exec-js "window.location.href" --return-value
-# 预期输出包含: page=2
-
-# Step 8: 提取第二页数据
-uv run auvima exec-js "
-Array.from(document.querySelectorAll('.product-item')).map(item =>
-  item.querySelector('.product-name')?.textContent?.trim()
-).join('\\n')
-" --return-value
-
-# 重复Step 4-8直到没有下一页
-```
-
----
-
-## 通用调试技巧
-
-### 1. 探索DOM结构
-
-```bash
-# 获取页面HTML片段
-uv run auvima exec-js "document.body.innerHTML.substring(0, 3000)" --return-value
-
-# 查找包含特定文本的元素
+# 如果找到，进一步定位
 uv run auvima exec-js "
 Array.from(document.querySelectorAll('*')).filter(el =>
-  el.textContent.includes('搜索')
-).map(el => el.tagName + '.' + el.className).slice(0, 10).join('\\n')
-" --return-value
-
-# 获取所有链接
-uv run auvima exec-js "
-Array.from(document.querySelectorAll('a')).map(a => a.href).slice(0, 20).join('\\n')
-" --return-value
-```
-
-### 2. 验证选择器
-
-```bash
-# 测试选择器是否有效
-uv run auvima exec-js "document.querySelector('YOUR_SELECTOR') ? 'found' : 'not found'" --return-value
-
-# 统计匹配元素数量
-uv run auvima exec-js "document.querySelectorAll('YOUR_SELECTOR').length" --return-value
-
-# 获取元素的所有属性
-uv run auvima exec-js "
-const el = document.querySelector('YOUR_SELECTOR');
-el ? {
+  el.innerHTML.toLowerCase().includes('transcript') && el.children.length < 5
+).map(el => ({
   tag: el.tagName,
-  id: el.id,
-  class: el.className,
-  text: el.textContent.substring(0, 100)
-} : null
+  text: el.textContent.substring(0, 100),
+  class: el.className
+})).slice(0, 10)
 " --return-value
 ```
 
-### 3. 等待策略
+### 失败恢复策略
 
-```bash
-# 固定等待
-uv run auvima wait 3
+**当操作没有达成目标时**
 
-# 等待元素出现后再操作
-uv run auvima navigate https://example.com --wait-for ".content-loaded"
+#### 检查清单
 
-# 检查元素是否可见
-uv run auvima exec-js "
-const el = document.querySelector('YOUR_SELECTOR');
-el && el.offsetParent !== null ? 'visible' : 'not visible'
-" --return-value
+1. **重新感知**
+   ```bash
+   uv run auvima screenshot current_state.png
+   uv run auvima get-content > current_page.html
+   ```
+
+2. **分析偏差**
+   - 预期：应该看到 X
+   - 实际：看到了 Y
+   - 原因：可能是 Z
+
+3. **调整策略**
+   - 策略 A 失败 → 尝试策略 B
+   - 示例：找不到按钮 → 尝试键盘快捷键 → 尝试 URL 直达
+
+4. **求助用户**（如果多次尝试失败）
+   - 说明：尝试了 A、B、C 三种方法
+   - 当前状态：截图展示
+   - 请求：是否有其他访问方式？
+
+---
+
+## 实战案例对比
+
+### 案例：获取 YouTube 最近3个通知对应视频的完整台词
+
+#### ❌ 错误执行方式
+
+```
+问题 1: 概念混淆
+- 看到"提醒"关键词，直接去找"历史记录"
+- 没有理解"提醒消息" = "通知"（Notifications）
+- 结果：南辕北辙，找错了地方
+
+问题 2: 盲目操作
+- 凭经验假设"台词"就是视频描述
+- 直接去抓取视频描述文本
+- 没有探索 YouTube 的 Transcript 功能
+- 结果：抓取了错误的内容
+
+问题 3: 原地踏步
+- 发现抓取的不是台词，但继续在描述区域寻找
+- 重复无效操作，不调整策略
+- 结果：浪费时间，始终无法达成目标
 ```
 
-### 4. 错误处理
+#### ✅ 正确执行方式
 
+**步骤 0: 任务分析**
+```
+用户需求分析：
+- "提醒消息" → YouTube Notifications（不是历史记录）
+- "内容台词" → 视频 Transcript/字幕文本（不是视频描述）
+- "最近的3个提醒" → 通知列表中最新的3条
+
+子任务分解：
+1. 打开 YouTube 通知
+2. 提取最近3个通知的视频链接
+3. 对每个视频：
+   a. 打开视频页面
+   b. 找到并打开 Transcript 功能
+   c. 提取完整台词文本
+4. 汇总3个视频的台词
+5. 分析并总结
+
+未知领域：
+- ❓ 通知在哪里？需要先感知 YouTube 首页
+- ❓ Transcript 如何打开？需要探索视频页面
+```
+
+**步骤 1: 打开通知**
 ```bash
-# 检查操作前先验证元素存在
-uv run auvima exec-js "document.querySelector('.target-element') ? 'exists' : 'missing'" --return-value
+# 目标：找到并打开 YouTube 通知
 
-# 如果元素存在才执行点击
+# 1. 系统性感知
+uv run auvima navigate https://youtube.com
+uv run auvima get-content > youtube_home.html
+uv run auvima screenshot youtube_home.png
+
+# 2. 分析 youtube_home.html，找到通知按钮
+# 通常是 aria-label="Notifications" 的按钮
+
+# 3. 尝试定位
+uv run auvima exec-js "Array.from(document.querySelectorAll('button')).filter(el => el.getAttribute('aria-label')?.includes('Notification')).map(el => el.getAttribute('aria-label'))" --return-value
+
+# 4. 点击通知按钮
+uv run auvima click "button[aria-label*='Notification']"
+
+# 5. 验证成功
+uv run auvima screenshot notifications_panel.png
+uv run auvima exec-js "document.querySelector('[role=\"menu\"]') ? 'panel opened' : 'failed'" --return-value
+```
+
+**步骤 2: 提取最近3个通知的视频链接**
+```bash
+# 目标：获取3个视频 URL
+
+# 1. 感知通知列表结构
+uv run auvima exec-js "document.querySelectorAll('[role=\"menuitem\"]').length" --return-value
+
+# 2. 提取前3个通知的视频链接
 uv run auvima exec-js "
-const el = document.querySelector('.target-element');
-if (el) {
-  el.click();
-  'clicked';
-} else {
-  'element not found';
-}
+Array.from(document.querySelectorAll('[role=\"menuitem\"] a')).slice(0, 3).map(a => a.href)
 " --return-value
+# 输出：['url1', 'url2', 'url3']
+```
+
+**步骤 3: 探索 Transcript 功能（首个视频）**
+```bash
+# 目标：学习如何打开 Transcript
+
+# 1. 打开第一个视频
+uv run auvima navigate [url1]
+uv run auvima get-content > video_page.html
+uv run auvima screenshot video_page.png
+
+# 2. 搜索 "transcript" 关键词
+uv run auvima exec-js "
+Array.from(document.querySelectorAll('button, [role=\"button\"]')).filter(el =>
+  el.textContent.toLowerCase().includes('transcript') ||
+  el.getAttribute('aria-label')?.toLowerCase().includes('transcript')
+).map(el => ({text: el.textContent, aria: el.getAttribute('aria-label')}))
+" --return-value
+
+# 3. 如果没找到，尝试打开"More"菜单
+uv run auvima exec-js "
+Array.from(document.querySelectorAll('button')).filter(el =>
+  el.textContent.includes('···') ||
+  el.getAttribute('aria-label')?.includes('More')
+).map(el => el.getAttribute('aria-label'))
+" --return-value
+
+# 4. 点击 More 菜单
+uv run auvima click "button[aria-label*='More']"
+uv run auvima screenshot menu_opened.png
+
+# 5. 查找 "Show transcript" 选项
+uv run auvima exec-js "
+Array.from(document.querySelectorAll('[role=\"menuitem\"]')).map(el => el.textContent.trim())
+" --return-value
+
+# 6. 点击 "Show transcript"
+uv run auvima click "[role='menuitem']:has-text('transcript')"
+# 或者用 exec-js 点击
+uv run auvima exec-js "
+Array.from(document.querySelectorAll('[role=\"menuitem\"]')).find(el =>
+  el.textContent.toLowerCase().includes('transcript')
+)?.click()
+" --return-value
+
+# 7. 验证 Transcript 面板打开
+uv run auvima screenshot transcript_opened.png
+```
+
+**步骤 4: 提取台词文本**
+```bash
+# 目标：获取完整台词
+
+# 1. 感知 Transcript 面板结构
+uv run auvima exec-js "document.querySelector('[aria-label*=\"transcript\"]')?.innerHTML.substring(0, 500)" --return-value
+
+# 2. 提取所有台词文本
+uv run auvima exec-js "
+Array.from(document.querySelectorAll('.ytd-transcript-segment-renderer')).map(seg =>
+  seg.querySelector('.segment-text')?.textContent?.trim()
+).join('\\n')
+" --return-value
+# 保存到文件
+> video1_transcript.txt
+
+# 3. 验证提取成功
+# 检查文本长度是否合理
+```
+
+**步骤 5: 重复步骤 3-4（对 url2 和 url3）**
+```bash
+# 已经知道如何打开 Transcript，直接执行
+# ...
+```
+
+**步骤 6: 汇总和分析**
+```
+- 读取 video1_transcript.txt, video2_transcript.txt, video3_transcript.txt
+- 分析台词内容
+- 生成总结
+```
+
+**关键区别**：
+1. ✅ 开始前先分析任务，识别关键概念
+2. ✅ 遇到未知功能（Transcript）先探索学习
+3. ✅ 每步都明确目标，验证是否接近目标
+4. ✅ 失败时调整策略，不原地踏步
+
+### 错误示范
+```bash
+# ❌ 错误：凭经验假设搜索框存在
+uv run auvima click "input[name='search']"
+```
+
+### 正确示范
+```bash
+# ✅ 正确：先系统性感知整个页面
+# 步骤 1: 获取页面内容，了解整体结构
+uv run auvima get-content > page_content.html
+
+# 步骤 2: 截图，获得视觉信息
+uv run auvima screenshot current_page.png
+
+# 步骤 3: 分析内容后，尝试定位搜索框（可能的 selector）
+uv run auvima exec-js "document.querySelector('input[name=\"search\"]') ? 'found by name' : 'not found'" --return-value
+uv run auvima exec-js "document.querySelector('input[type=\"search\"]') ? 'found by type' : 'not found'" --return-value
+uv run auvima exec-js "document.querySelector('.search-input') ? 'found by class' : 'not found'" --return-value
+
+# 步骤 4: 确认找到后，才执行点击
+uv run auvima click "input[name='search']"
 ```
 
 ---
 
-## 最佳实践
+## 感知手段
 
-1. ✅ **总是在操作后验证结果**
-   ```bash
-   uv run auvima click ".button"
-   uv run auvima wait 1
-   uv run auvima get-title  # 验证页面是否改变
-   ```
+### 手段 1: 获取页面内容（get-content）
+- **用途**：了解页面整体 HTML 结构
+- **使用时机**：
+  - ✅ 页面首次加载后
+  - ✅ 页面跳转后
+  - ❌ 同一页面内的操作（不需要重复获取）
+- **输出**：保存到文件分析，或直接查看
+```bash
+uv run auvima get-content > page.html
+```
 
-2. ✅ **使用渐进式探索**
-   ```bash
-   # 先获取少量数据测试选择器
-   uv run auvima exec-js "document.querySelector('.item')?.textContent" --return-value
-   # 确认后再批量提取
-   uv run auvima exec-js "Array.from(document.querySelectorAll('.item')).map(...)" --return-value
-   ```
+### 手段 2: 截图（screenshot）
+- **用途**：视觉感知页面状态、元素位置
+- **使用时机**：
+  - ✅ 页面首次加载后
+  - ✅ 关键操作前后（对比变化）
+  - ✅ 调试时（确认元素位置）
+- **输出**：PNG 图片
+```bash
+uv run auvima screenshot page.png
+uv run auvima screenshot page_fullpage.png --full-page
+```
 
-3. ✅ **适当的等待时间**
-   - 页面导航: 2-3秒
-   - AJAX请求: 1-2秒
-   - 动画效果: 0.5-1秒
+### 手段 3: 获取页面标题（get-title）
+- **用途**：快速确认页面身份、验证跳转
+- **使用时机**：
+  - ✅ 验证页面加载成功
+  - ✅ 确认点击后页面是否跳转
+- **输出**：页面标题文本
+```bash
+uv run auvima get-title
+```
 
-4. ✅ **关键步骤截图**
-   ```bash
-   uv run auvima screenshot step1_initial.png
-   # ... 执行操作
-   uv run auvima screenshot step2_after_click.png
-   ```
+### 手段 4: Selector 尝试（exec-js）
+- **用途**：探索元素，验证 selector 是否有效
+- **使用时机**：在获取页面内容/截图后，分析出可能的 selector，逐个尝试
+- **策略**：多种 selector 并行尝试，找到最可靠的
+```bash
+# 尝试多种可能的 selector
+uv run auvima exec-js "document.querySelector('input[name=\"search\"]') ? 'found' : 'not found'" --return-value
+uv run auvima exec-js "document.querySelector('input[type=\"search\"]') ? 'found' : 'not found'" --return-value
+uv run auvima exec-js "document.querySelector('#search') ? 'found' : 'not found'" --return-value
 
-5. ✅ **使用调试模式排查问题**
-   ```bash
-   uv run auvima --debug navigate https://example.com
-   ```
+# 获取元素详细信息
+uv run auvima exec-js "const el = document.querySelector('input[name=\"search\"]'); el ? {tag: el.tagName, id: el.id, class: el.className, visible: el.offsetParent !== null} : null" --return-value
+```
+
+### 手段 5: HTML 片段提取（exec-js）
+- **用途**：精确提取页面某个区域的 HTML
+- **使用时机**：get-content 内容太长，需要聚焦特定区域
+```bash
+# 提取 body 前 2000 字符
+uv run auvima exec-js "document.body.innerHTML.substring(0, 2000)" --return-value
+
+# 提取特定区域的 HTML
+uv run auvima exec-js "document.querySelector('.main-content')?.innerHTML.substring(0, 1000)" --return-value
+```
+
+### 手段 6: 文本搜索（exec-js）
+- **用途**：通过文本内容反向找到元素
+- **使用时机**：不知道 selector，但知道元素包含特定文本
+```bash
+# 搜索包含"搜索"文本的元素
+uv run auvima exec-js "Array.from(document.querySelectorAll('*')).filter(el => el.textContent.includes('搜索') && el.children.length === 0).map(el => ({tag: el.tagName, class: el.className, id: el.id})).slice(0, 10)" --return-value
+```
 
 ---
 
-## 注意事项
+## 感知策略
 
-⚠️ **选择器可能随时变化** - 网站更新后需要重新探索DOM结构
-⚠️ **网络延迟影响** - 根据实际网速调整wait时间
-⚠️ **动态内容** - 某些内容需要滚动或交互才会加载
-⚠️ **反爬机制** - 某些网站可能检测自动化行为
+### 策略：何时需要重新感知
+
+| 情况 | 需要 get-content | 需要 screenshot | 需要 selector 尝试 |
+|------|-----------------|----------------|-------------------|
+| 首次打开页面 | ✅ 必须 | ✅ 建议 | ✅ 必须 |
+| 页面跳转后 | ✅ 必须 | ✅ 建议 | ✅ 必须 |
+| 同一页面操作（点击按钮、填写表单） | ❌ 不需要 | ⚠️ 调试时 | ❌ 不需要 |
+| 动态内容加载（AJAX、滚动加载） | ❌ 不需要 | ✅ 建议 | ✅ 验证新元素 |
+| 操作失败需要调试 | ⚠️ 可选 | ✅ 必须 | ✅ 必须 |
+
+### 完整感知流程示例
+
+```bash
+# 场景：首次打开 YouTube 并搜索视频
+
+# === 第一次感知（打开页面）===
+uv run auvima navigate https://youtube.com
+
+# 1. 获取页面内容
+uv run auvima get-content > youtube_homepage.html
+
+# 2. 截图
+uv run auvima screenshot youtube_homepage.png
+
+# 3. 分析 youtube_homepage.html 和 youtube_homepage.png
+#    发现搜索框可能的 selector: input[name="search_query"]
+
+# 4. 验证 selector
+uv run auvima exec-js "document.querySelector('input[name=\"search_query\"]') ? 'exists' : 'not found'" --return-value
+# 输出: exists
+
+# 5. 获取搜索框详细信息
+uv run auvima exec-js "const el = document.querySelector('input[name=\"search_query\"]'); ({visible: el.offsetParent !== null, value: el.value})" --return-value
+
+# === 在同一页面操作（不需要重新 get-content）===
+# 6. 点击搜索框
+uv run auvima click "input[name='search_query']"
+
+# 7. 填写搜索内容
+uv run auvima exec-js "document.querySelector('input[name=\"search_query\"]').value='AI tutorial'"
+
+# 8. 验证填写成功
+uv run auvima exec-js "document.querySelector('input[name=\"search_query\"]').value" --return-value
+
+# 9. 点击搜索按钮（已知 selector，直接操作）
+uv run auvima click "button#search-icon-legacy"
+
+# === 第二次感知（页面跳转到搜索结果）===
+# 10. 验证页面跳转
+uv run auvima get-title
+# 输出包含: AI tutorial
+
+# 11. 重新获取页面内容（因为页面已跳转）
+uv run auvima get-content > youtube_search_results.html
+
+# 12. 截图新页面
+uv run auvima screenshot youtube_search_results.png
+
+# 13. 分析搜索结果页结构，找到视频列表的 selector
+uv run auvima exec-js "document.querySelectorAll('ytd-video-renderer').length" --return-value
+# 输出: 20
+
+# 14. 提取数据
+uv run auvima exec-js "Array.from(document.querySelectorAll('ytd-video-renderer')).slice(0, 5).map(v => v.querySelector('#video-title')?.textContent?.trim()).join('\n')" --return-value
+```
+
+---
+
+## 两种操作模式
+
+### 模式 1: 探索模式（AI 自己操作）
+
+**场景**：探索网站结构、提取数据、测试功能
+
+**特点**：
+- **不需要 wait 命令**：每次工具调用之间自然有 time gap，浏览器有足够时间响应
+- 操作流程：感知 → 分析 → 操作 → 验证 → 重复
+
+**示例**：
+```bash
+# 探索 YouTube 搜索功能
+uv run auvima navigate https://youtube.com
+uv run auvima exec-js "document.querySelector('input[name=\"search_query\"]') ? 'found' : 'not found'" --return-value
+# 如果返回 'found'，继续
+uv run auvima click "input[name='search_query']"
+uv run auvima exec-js "document.querySelector('input[name=\"search_query\"]').value='AI tutorial'"
+# 验证输入成功
+uv run auvima exec-js "document.querySelector('input[name=\"search_query\"]').value" --return-value
+# 确认后点击搜索
+uv run auvima click "button#search-icon-legacy"
+# 验证页面跳转
+uv run auvima get-title
+```
+
+### 模式 2: 录制模式（生成 pipeline 脚本）
+
+**场景**：录制视频素材、自动化演示、重复执行流程
+
+**特点**：
+- **必须使用 wait 命令**：脚本是固定步骤序列，不会动态等待，必须预留时间
+- AI 的职责：通过探索模式摸索流程 → 总结经验 → 撰写包含 wait 的 pipeline 脚本
+
+**工作流程**：
+1. **探索阶段**（不用 wait）：AI 自己操作，摸清所有步骤
+2. **分析阶段**：总结每个步骤需要多少等待时间
+3. **脚本生成阶段**：将经验固化为带 wait 的脚本
+
+**示例**（生成的脚本）：
+```bash
+#!/bin/bash
+# 这是 AI 探索后生成的录制脚本
+
+uv run auvima navigate https://youtube.com
+uv run auvima wait 3  # 页面加载需要3秒
+
+uv run auvima click "input[name='search_query']"
+uv run auvima wait 0.5  # 搜索框获得焦点需要0.5秒
+
+uv run auvima exec-js "document.querySelector('input[name=\"search_query\"]').value='AI tutorial'"
+uv run auvima wait 0.3  # 输入动画需要0.3秒
+
+uv run auvima click "button#search-icon-legacy"
+uv run auvima wait 2  # 搜索结果加载需要2秒
+
+uv run auvima screenshot final_result.png
+```
+
+---
+
+## 操作工具
+
+#### `navigate`
+- **用途**：导航到指定 URL
+- **使用时机**：开始任务、切换页面
+- **注意**：导航后必须验证页面加载成功（用 `get-title` 或 `exec-js`）
+
+#### `click`
+- **用途**：点击元素
+- **使用时机**：已确认元素存在且可点击
+- **注意**：点击前必须先用 `exec-js` 确认元素存在
+- **参数**：CSS 选择器
+
+#### `exec-js`（无 `--return-value`）
+- **用途**：执行操作（填写表单、触发事件、修改 DOM）
+- **使用时机**：需要复杂操作时
+- **核心能力**：
+  - 填写输入框：`element.value = 'text'`
+  - 触发点击：`element.click()`
+  - 修改样式：`element.style.xxx = 'value'`
+  - 执行复杂逻辑：`if/else` 判断
+
+#### `scroll`
+- **用途**：滚动页面（触发懒加载、查看更多内容）
+- **使用时机**：内容超出视口、需要加载更多数据
+- **参数**：滚动距离（像素）
+
+#### `highlight`
+- **用途**：高亮元素（调试、确认选择器正确）
+- **使用时机**：不确定选择器是否准确时
+- **参数**：选择器、颜色、边框宽度
+
+#### `wait`
+- **用途**：在脚本中插入固定等待时间
+- **使用时机**：**仅在生成 pipeline 脚本时使用**
+- **探索模式**：❌ 不需要使用，工具调用间隔自然提供等待时间
+- **录制模式**：✅ 必须使用，脚本不会动态等待
+
+---
+
+## 数据提取模式
+
+### 渐进式探索
+
+```bash
+# 步骤 1: 先测试单个元素
+uv run auvima exec-js "document.querySelector('.item')?.textContent" --return-value
+
+# 步骤 2: 确认有效后，批量提取
+uv run auvima exec-js "Array.from(document.querySelectorAll('.item')).map(el => el.textContent.trim()).join('\n')" --return-value
+```
+
+### 错误处理
+
+```bash
+# 操作前先验证元素存在
+uv run auvima exec-js "const el = document.querySelector('.button'); if (el) { el.click(); 'clicked'; } else { 'element not found'; }" --return-value
+```
+
+### 列表和表格数据
+
+```bash
+# 提取列表数据
+uv run auvima exec-js "
+Array.from(document.querySelectorAll('.product-card')).slice(0, 10).map((card, i) => {
+  const name = card.querySelector('.name')?.textContent?.trim() || 'N/A';
+  const price = card.querySelector('.price')?.textContent?.trim() || 'N/A';
+  return (i+1) + '. ' + name + ' | ' + price;
+}).join('\n')
+" --return-value
+
+# 提取表格数据
+uv run auvima exec-js "
+Array.from(document.querySelectorAll('table tbody tr')).map((row, i) => {
+  const cells = Array.from(row.querySelectorAll('td')).map(td => td.textContent.trim());
+  return (i+1) + '. ' + cells.join(' | ');
+}).join('\n')
+" --return-value
+```
+
+### 分页处理
+
+```bash
+# 检查是否有下一页
+uv run auvima exec-js "document.querySelector('.next-page') ? 'has next' : 'last page'" --return-value
+
+# 提取当前页数据
+uv run auvima exec-js "Array.from(document.querySelectorAll('.item')).map(el => el.textContent.trim()).join('\n')" --return-value
+
+# 点击下一页
+uv run auvima click ".next-page"
+
+# 验证页面切换
+uv run auvima exec-js "window.location.href" --return-value
+```
+
+---
+
+## 常见场景决策树
+
+### 场景：需要提取页面数据
+
+1. **系统性感知**
+   ```bash
+   uv run auvima get-content > page.html
+   uv run auvima screenshot page.png
+   ```
+
+2. **分析并尝试 selector**
+   ```bash
+   # 根据 page.html 和 page.png 分析出可能的 selector
+   uv run auvima exec-js "document.querySelector('TARGET_SELECTOR') ? 'found' : 'not found'" --return-value
+   ```
+
+3. **验证选择器精确性**
+   ```bash
+   uv run auvima exec-js "document.querySelectorAll('TARGET_SELECTOR').length" --return-value
+   ```
+
+4. **批量提取数据**
+   ```bash
+   uv run auvima exec-js "Array.from(document.querySelectorAll('TARGET_SELECTOR')).map(...)" --return-value
+   ```
+
+### 场景：需要填写表单
+
+1. **系统性感知**
+   ```bash
+   uv run auvima get-content > form_page.html
+   uv run auvima screenshot form_page.png
+   ```
+
+2. **分析并探索表单字段**
+   ```bash
+   # 根据 form_page.html 分析表单结构
+   uv run auvima exec-js "Array.from(document.querySelectorAll('input, textarea, select')).map(el => ({name: el.name, type: el.type, id: el.id}))" --return-value
+   ```
+
+3. **填写每个字段**
+   ```bash
+   uv run auvima exec-js "document.querySelector('input[name=\"email\"]').value='test@example.com'"
+   ```
+
+4. **验证填写成功**
+   ```bash
+   uv run auvima exec-js "document.querySelector('input[name=\"email\"]').value" --return-value
+   ```
+
+5. **提交前截图确认**
+   ```bash
+   uv run auvima screenshot form_before_submit.png
+   ```
+
+### 场景：需要录制视频素材
+
+1. **探索模式**：AI 自己操作，摸清所有步骤（不用 wait）
+2. **分析时间**：记录每个步骤实际需要多久
+3. **生成脚本**：创建包含 wait 命令的 bash 脚本
+4. **测试脚本**：运行脚本验证时间是否合理
+5. **录制视频**：用脚本控制浏览器，同时录制屏幕
+
+---
+
+## 调试技巧
+
+### 高亮元素定位
+```bash
+uv run auvima highlight "YOUR_SELECTOR" --color red --width 5
+uv run auvima screenshot debug.png
+```
+
+### 检查元素可见性
+```bash
+uv run auvima exec-js "const el = document.querySelector('YOUR_SELECTOR'); el && el.offsetParent !== null ? 'visible' : 'hidden'" --return-value
+```
+
+### 获取所有链接
+```bash
+uv run auvima exec-js "Array.from(document.querySelectorAll('a')).map(a => a.href).slice(0, 20).join('\n')" --return-value
+```
+
+### 搜索包含特定文本的元素
+```bash
+uv run auvima exec-js "Array.from(document.querySelectorAll('*')).filter(el => el.textContent.includes('关键词') && el.children.length === 0).map(el => el.tagName + '.' + (el.className || 'no-class')).join('\n')" --return-value
+```
+
+---
+
+## 核心原则总结
+
+### 在开始前
+
+1. **先理解任务，再动手**
+   - 识别关键概念（"提醒消息" ≠ "历史记录"）
+   - 分解子任务，明确每步目标
+   - 识别未知领域，规划探索策略
+
+2. **你是瞎子**
+   - 每个假设都要通过工具验证
+   - 系统性感知：get-content + screenshot
+   - 永远不要凭经验猜测
+
+### 执行中
+
+3. **目标导向执行**
+   - 每步操作前：这是为了达成什么目标？
+   - 每步操作后：是否让我更接近目标？
+   - 失败时：分析原因，调整策略，不要原地踏步
+
+4. **感知 → 分析 → 操作 → 验证**
+   - 页面跳转后：必须重新 get-content + screenshot
+   - 同一页面操作：不需要重复感知
+   - 遇到未知功能：先探索（视觉搜索/菜单探索/HTML 搜索）
+
+### 两种模式
+
+5. **探索模式（AI 操作）**：不需要 wait，工具调用间隔足够
+6. **录制模式（生成脚本）**：必须有 wait，脚本不会动态等待
 
 ---
 
