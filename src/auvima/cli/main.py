@@ -26,6 +26,7 @@ from .commands import (
     spotlight,
     annotate
 )
+from .recipe_commands import recipe_group
 
 
 @click.group()
@@ -128,6 +129,9 @@ cli.add_command(highlight)
 cli.add_command(pointer)
 cli.add_command(spotlight)
 cli.add_command(annotate)
+
+# Recipe 管理命令组
+cli.add_command(recipe_group)
 
 
 def main():

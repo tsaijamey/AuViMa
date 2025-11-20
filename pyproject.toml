@@ -28,6 +28,7 @@ dependencies = [
     "click>=8.1.0",
     "pydantic>=2.0.0",
     "python-dotenv>=1.0.0",
+    "pyyaml>=6.0.0",
     "certifi>=2025.11.12",
     "charset-normalizer>=3.4.4",
     "idna>=3.11",
@@ -62,6 +63,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/auvima"]
+
+[tool.setuptools]
+exclude = ["examples*"]
 
 [tool.pytest.ini_options]
 minversion = "7.0"

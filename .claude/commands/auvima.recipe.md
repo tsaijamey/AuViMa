@@ -85,22 +85,53 @@ uv run auvima pointer <selector>
   - `youtube_transcript.js` (差：是提取？显示？还是隐藏？)
   - `github_star_repository_if_not_starred.js` (好：逻辑完整)
 
-### 2. 逐步探索
+### 2. 逐步探索（带结果验证）
 
-引导用户描述每个步骤，**你实际执行CDP命令**：
+引导用户描述每个步骤，**你实际执行CDP命令并验证结果**：
 
 ```
 你: 第一步需要做什么？
 用户: 点击"作者声明"展开详情
 你: [执行] uv run auvima click '[aria-label="作者声明"]'
+你: [等待] uv run auvima wait 0.5
+你: [验证] uv run auvima screenshot /tmp/step1_result.png
+你: [查看截图，确认详情已展开]
     ✓ 成功。记录：ARIA选择器（优先级5）
+    ✓ 验证通过：页面出现了详情内容区域
     下一步呢？
 ```
 
-**记住你执行的每个命令**：
-- 使用了哪些选择器（及其优先级）
-- 执行了什么操作
-- 需要等待多久（观察执行间隔）
+**关键原则：每步必须验证**
+
+对于每个操作步骤，必须验证其**结果特征**：
+
+1. **导航操作**（navigate/click导致页面跳转）
+   - 验证URL是否变化：`uv run auvima exec-js "window.location.href" --return-value`
+   - 验证页面标题：`uv run auvima get-title`
+   - 验证关键元素出现：`uv run auvima exec-js "document.querySelector('<特征元素>') !== null" --return-value`
+
+2. **UI交互操作**（点击按钮/菜单）
+   - 截图对比：`uv run auvima screenshot /tmp/stepN.png`
+   - 验证目标元素出现/消失
+   - 检查文本内容变化
+
+3. **表单/输入操作**
+   - 验证输入值已填充
+   - 验证错误提示/成功提示
+
+**记录每步的执行信息**：
+- 使用的选择器（及其优先级）
+- 执行的操作
+- **等待时间**（根据页面响应速度调整）
+- **验证方法**（如何确认步骤成功）
+- **预期的页面特征变化**（用于生成验证代码）
+
+**验证失败时的处理**：
+如果某步验证失败（点击无效、元素未出现等）：
+1. 尝试其他选择器
+2. 增加等待时间
+3. 检查是否需要滚动到元素位置
+4. 记录哪些选择器失败了（避免写入配方）
 
 ### 3. 生成配方文件
 
@@ -119,7 +150,7 @@ JavaScript配方脚本：
  * Version: 1
  */
 
-(async function() {
+(async () => {
   // 辅助函数：按优先级尝试多个选择器
   function findElement(selectors, description) {
     for (const sel of selectors) {
@@ -129,6 +160,17 @@ JavaScript配方脚本：
     throw new Error(`无法找到${description}`);
   }
 
+  // 辅助函数：等待并验证元素出现
+  async function waitForElement(selector, description, timeout = 5000) {
+    const startTime = Date.now();
+    while (Date.now() - startTime < timeout) {
+      const elem = document.querySelector(selector);
+      if (elem) return elem;
+      await new Promise(r => setTimeout(r, 100));
+    }
+    throw new Error(`等待超时：${description} (${selector})`);
+  }
+
   // 步骤1: <用户描述>
   const elem1 = findElement([
     { selector: '<ARIA或data属性>', priority: 5 },  // 最稳定
@@ -136,27 +178,36 @@ JavaScript配方脚本：
     { selector: '<语义类名>', priority: 3 }          // 再降级
   ], '<元素描述>');
   elem1.click();
-  await new Promise(r => setTimeout(r, 500));  // 等待DOM更新
+
+  // 验证步骤1成功：等待<预期特征>出现
+  await waitForElement('<验证选择器>', '<预期特征描述>');
+  await new Promise(r => setTimeout(r, 500));
 
   // 步骤2: <用户描述>
   const elem2 = findElement([
     { selector: '<选择器1>', priority: 5 }
   ], '<元素描述>');
   elem2.click();
+
+  // 验证步骤2成功：检查<预期特征>
+  await waitForElement('<验证选择器>', '<预期特征描述>');
   await new Promise(r => setTimeout(r, 500));
 
   // 步骤3: 提取数据
   const result = document.querySelector('.target').innerText;
-  
+
   return result;
 })();
 ```
 
 **编写规则**：
+- 使用箭头函数IIFE：`(async () => {...})()`（CDP才能正确等待Promise）
 - 优先使用高优先级选择器（ARIA/data > ID > class）
 - 每个元素提供2-3个降级选择器（如果探索中使用了多个）
+- **每步操作后必须验证**：使用 `waitForElement()` 等待预期特征出现
 - 操作后等待：点击/输入后500ms，导航后2000ms
-- 清晰的错误消息
+- 清晰的错误消息（包含选择器信息）
+- **验证选择器的选择**：选择步骤执行成功后"必然出现"的唯一元素
 
 #### 文件2: `src/auvima/recipes/<自解释文件名>.md`
 
@@ -275,12 +326,16 @@ JavaScript配方脚本：
 
 ## 重要提醒
 
-1. **你会写代码**：直接用Write工具写.js和.md，不要调用任何Python函数
-2. **你经历过整个过程**：你执行了CDP命令，所以你知道怎么写JavaScript
-3. **文件命名规范**：`<平台>_<动词>_<对象>_<补充>.js`（全小写，短句式），必须有同名`.md`文件
-4. **6章节完整性**：知识文档必须包含全部6个章节
-5. **选择器降级**：按优先级从高到低排列，提供2-3个备选
-6. **等待时间**：根据实际执行经验设置（点击500ms，导航2000ms）
+1. **验证是核心**：每步操作后必须验证结果，否则配方会因步骤失败而返回错误结果
+2. **你会写代码**：直接用Write工具写.js和.md，不要调用任何Python函数
+3. **你经历过整个过程**：你执行了CDP命令并验证了结果，所以你知道：
+   - 哪些选择器有效
+   - 每步成功后出现了什么特征
+   - 需要等待多久
+4. **文件命名规范**：`<平台>_<动词>_<对象>_<补充>.js`（全小写，短句式），必须有同名`.md`文件
+5. **6章节完整性**：知识文档必须包含全部6个章节
+6. **选择器降级**：按优先级从高到低排列，提供2-3个备选
+7. **异步语法**：使用 `(async () => {...})()` 而非 `(async function(){...})()` 或顶层await+return
 
 ---
 
