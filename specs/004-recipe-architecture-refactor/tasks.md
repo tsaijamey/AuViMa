@@ -26,11 +26,11 @@
 
 **Purpose**: 创建项目结构并安装必要依赖
 
-- [ ] T001 添加 `pyyaml` 依赖到 `pyproject.toml` 的 `dependencies` 列表
-- [ ] T002 [P] 创建 Recipe 引擎目录结构：`src/auvima/recipes/` 及 `__init__.py`, `runner.py`, `registry.py`, `metadata.py`, `output_handler.py`, `exceptions.py`
-- [ ] T003 [P] 创建示例 Recipe 目录结构：`examples/atomic/chrome/`, `examples/atomic/system/`, `examples/workflows/`
+- [X] T001 添加 `pyyaml` 依赖到 `pyproject.toml` 的 `dependencies` 列表
+- [X] T002 [P] 创建 Recipe 引擎目录结构：`src/auvima/recipes/` 及 `__init__.py`, `runner.py`, `registry.py`, `metadata.py`, `output_handler.py`, `exceptions.py`
+- [X] T003 [P] 创建示例 Recipe 目录结构：`examples/atomic/chrome/`, `examples/atomic/system/`, `examples/workflows/`
 - [ ] T004 [P] 创建测试目录结构：`tests/unit/`, `tests/integration/`, `tests/fixtures/recipes/`
-- [ ] T005 更新 `pyproject.toml` 的 `[tool.setuptools]` 配置，排除 `examples/` 目录不打包到 wheel
+- [X] T005 更新 `pyproject.toml` 的 `[tool.setuptools]` 配置，排除 `examples/` 目录不打包到 wheel
 
 ---
 
@@ -40,14 +40,14 @@
 
 **⚠️ CRITICAL**: 所有用户故事工作必须等此阶段完成
 
-- [ ] T006 [P] 在 `src/auvima/recipes/exceptions.py` 中实现 Recipe 专用异常类：`RecipeNotFoundError`, `RecipeExecutionError`, `RecipeValidationError`, `MetadataParseError`
-- [ ] T007 [P] 在 `src/auvima/recipes/metadata.py` 中实现 `RecipeMetadata` 数据类，包含所有必需字段（name, type, runtime, version, inputs, outputs）和 AI 字段（description, use_cases, tags, output_targets）
-- [ ] T008 在 `src/auvima/recipes/metadata.py` 中实现 `parse_metadata_file(path: Path) -> RecipeMetadata` 函数，解析 Markdown 文件的 YAML frontmatter
-- [ ] T009 在 `src/auvima/recipes/metadata.py` 中实现 `validate_metadata(metadata: RecipeMetadata) -> None` 函数，验证必需字段、枚举值、AI 字段完整性
-- [ ] T010 [P] 在 `src/auvima/recipes/registry.py` 中实现 `RecipeRegistry` 类，包含 `search_paths`, `recipes` 属性和 `scan()`, `find(name)`, `list_all()` 方法
-- [ ] T011 在 `src/auvima/recipes/registry.py` 中实现三级查找路径逻辑：项目级（`.auvima/recipes/`）> 用户级（`~/.auvima/recipes/`）> 示例级（`examples/`）
-- [ ] T012 [P] 在 `src/auvima/recipes/output_handler.py` 中实现 `OutputHandler` 静态类，包含 `handle(data, target, options)` 方法，支持 stdout, file, clipboard 三种输出目标
-- [ ] T013 [P] 在 `src/auvima/recipes/runner.py` 中实现 `RecipeRunner` 类框架，包含 `registry` 属性和 `run(name, params, output_target)` 方法签名
+- [X] T006 [P] 在 `src/auvima/recipes/exceptions.py` 中实现 Recipe 专用异常类：`RecipeNotFoundError`, `RecipeExecutionError`, `RecipeValidationError`, `MetadataParseError`
+- [X] T007 [P] 在 `src/auvima/recipes/metadata.py` 中实现 `RecipeMetadata` 数据类，包含所有必需字段（name, type, runtime, version, inputs, outputs）和 AI 字段（description, use_cases, tags, output_targets）
+- [X] T008 在 `src/auvima/recipes/metadata.py` 中实现 `parse_metadata_file(path: Path) -> RecipeMetadata` 函数，解析 Markdown 文件的 YAML frontmatter
+- [X] T009 在 `src/auvima/recipes/metadata.py` 中实现 `validate_metadata(metadata: RecipeMetadata) -> None` 函数，验证必需字段、枚举值、AI 字段完整性
+- [X] T010 [P] 在 `src/auvima/recipes/registry.py` 中实现 `RecipeRegistry` 类，包含 `search_paths`, `recipes` 属性和 `scan()`, `find(name)`, `list_all()` 方法
+- [X] T011 在 `src/auvima/recipes/registry.py` 中实现三级查找路径逻辑：项目级（`.auvima/recipes/`）> 用户级（`~/.auvima/recipes/`）> 示例级（`examples/`）
+- [X] T012 [P] 在 `src/auvima/recipes/output_handler.py` 中实现 `OutputHandler` 静态类，包含 `handle(data, target, options)` 方法，支持 stdout, file, clipboard 三种输出目标
+- [X] T013 [P] 在 `src/auvima/recipes/runner.py` 中实现 `RecipeRunner` 类框架，包含 `registry` 属性和 `run(name, params, output_target)` 方法签名
 
 **Checkpoint**: 基础架构就绪 - 用户故事实现现在可以并行开始
 
@@ -61,11 +61,11 @@
 
 ### Implementation for User Story 0
 
-- [ ] T014 [P] [US0] 在 `src/auvima/cli/recipe_commands.py` 中实现 `recipe list` 命令，支持 `--format json` 选项，输出包含 AI 元数据字段（description, use_cases, tags, output_targets）的 JSON 数组
-- [ ] T015 [P] [US0] 在 `src/auvima/cli/recipe_commands.py` 中实现 `recipe info <name>` 命令，显示 Recipe 的所有元数据，包括 AI 可理解字段
-- [ ] T016 [US0] 在 `src/auvima/cli/recipe_commands.py` 中实现 `recipe run <name>` 命令，支持 `--params`, `--params-file`, `--output-file`, `--output-clipboard` 选项
-- [ ] T017 [US0] 在 `src/auvima/cli/main.py` 中注册 `recipe` 命令组，关联到 `recipe_commands.py` 的命令函数
-- [ ] T018 [P] [US0] 迁移现有 Recipe 到示例目录：将 `src/auvima/recipes/upwork_extract_job_details_as_markdown.js` 移动到 `examples/atomic/chrome/`
+- [X] T014 [P] [US0] 在 `src/auvima/cli/recipe_commands.py` 中实现 `recipe list` 命令，支持 `--format json` 选项，输出包含 AI 元数据字段（description, use_cases, tags, output_targets）的 JSON 数组
+- [X] T015 [P] [US0] 在 `src/auvima/cli/recipe_commands.py` 中实现 `recipe info <name>` 命令，显示 Recipe 的所有元数据，包括 AI 可理解字段
+- [X] T016 [US0] 在 `src/auvima/cli/recipe_commands.py` 中实现 `recipe run <name>` 命令，支持 `--params`, `--params-file`, `--output-file`, `--output-clipboard` 选项
+- [X] T017 [US0] 在 `src/auvima/cli/main.py` 中注册 `recipe` 命令组，关联到 `recipe_commands.py` 的命令函数
+- [X] T018 [P] [US0] 迁移现有 Recipe 到示例目录：将 `src/auvima/recipes/upwork_extract_job_details_as_markdown.js` 移动到 `examples/atomic/chrome/`
 - [ ] T019 [P] [US0] 为迁移的 Recipe 创建元数据文件：`examples/atomic/chrome/upwork_extract_job_details_as_markdown.md`，包含 AI 字段（description, use_cases, tags, output_targets）
 - [ ] T020 [US0] 创建集成测试 `tests/integration/test_ai_workflow.py`，模拟 AI 调用 `recipe list --format json` → 解析 JSON → 选择 Recipe → 调用 `recipe run` 的完整流程
 - [ ] T021 [US0] 更新 `.claude/commands/auvima-recipe.md` 文档，说明 `/auvima.recipe` 命令如何支持 AI 生成 Workflow Recipe（为后续 Workflow 生成功能预留）
