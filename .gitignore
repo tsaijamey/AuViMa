@@ -44,3 +44,6 @@ htmlcov/
 .env*
 !.env.example
 !.env.cdpREADME.pdf
+
+# private working files
+workdir/
