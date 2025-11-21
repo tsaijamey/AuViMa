@@ -110,16 +110,15 @@ class TestShellRecipeExecution:
 
     def test_file_copy_missing_params(self, recipe_runner):
         """测试缺少必需参数时的错误处理"""
-        try:
-            result = recipe_runner.run("file_copy", {})
+        from auvima.recipes.exceptions import RecipeValidationError
 
-            # 应该返回失败结果
-            assert result["success"] is False
-            assert "error" in result
-            assert "ValidationError" in result["error"]["type"]
-        except RecipeExecutionError:
-            # 如果抛出异常也是可接受的
-            pass
+        # 应该抛出 RecipeValidationError
+        with pytest.raises(RecipeValidationError) as exc_info:
+            recipe_runner.run("file_copy", {})
+
+        # 验证错误信息
+        assert "source_path" in str(exc_info.value)
+        assert "dest_path" in str(exc_info.value)
 
     def test_file_copy_nonexistent_source(self, recipe_runner):
         """测试源文件不存在时的错误处理"""

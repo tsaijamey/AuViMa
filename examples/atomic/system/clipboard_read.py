@@ -16,31 +16,18 @@ def read_clipboard():
         import pyperclip
         content = pyperclip.paste()
         return {
-            "success": True,
-            "data": {
-                "content": content,
-                "length": len(content)
-            }
+            "content": content,
+            "length": len(content)
         }
     except ImportError:
-        return {
-            "success": False,
-            "error": {
-                "type": "DependencyError",
-                "message": "pyperclip module not found. Install with: pip install pyperclip"
-            }
-        }
+        print("Error: pyperclip module not found. Install with: pip install pyperclip", file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
-        return {
-            "success": False,
-            "error": {
-                "type": type(e).__name__,
-                "message": str(e)
-            }
-        }
+        print(f"Error: {type(e).__name__}: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
     result = read_clipboard()
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    sys.exit(0 if result["success"] else 1)
+    sys.exit(0)
