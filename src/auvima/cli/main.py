@@ -24,7 +24,8 @@ from .commands import (
     highlight,
     pointer,
     spotlight,
-    annotate
+    annotate,
+    init
 )
 from .recipe_commands import recipe_group
 
@@ -129,6 +130,7 @@ cli.add_command(highlight)
 cli.add_command(pointer)
 cli.add_command(spotlight)
 cli.add_command(annotate)
+cli.add_command(init)
 
 # Recipe 管理命令组
 cli.add_command(recipe_group)

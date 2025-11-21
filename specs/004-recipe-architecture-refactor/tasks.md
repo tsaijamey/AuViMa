@@ -103,13 +103,13 @@
 
 ### Implementation for User Story 2
 
-- [ ] T030 [P] [US2] 在 `src/auvima/cli/commands.py` 中实现 `init` 命令，创建用户级目录结构：`~/.auvima/recipes/atomic/chrome/`, `atomic/system/`, `workflows/`
-- [ ] T031 [P] [US2] 在 `src/auvima/cli/recipe_commands.py` 中实现 `recipe copy <name>` 命令，将示例 Recipe 复制到用户级目录（脚本 + 元数据文件）
-- [ ] T032 [US2] 在 `src/auvima/recipes/registry.py` 的 `scan()` 方法中实现来源标注逻辑：标记 Recipe 为 `Project` / `User` / `Example` 来源
-- [ ] T033 [US2] 在 `src/auvima/cli/recipe_commands.py` 的 `list` 命令中显示来源标签（表格格式的 SOURCE 列，JSON 格式的 source 字段）
-- [ ] T034 [US2] 迁移所有现有 Recipe 到 `examples/atomic/chrome/`：`youtube_extract_video_transcript.js/md`, `x_extract_tweet_with_comments.js/md`, `test_inspect_tab.js/md`
-- [ ] T035 [US2] 为所有迁移的 Recipe 更新元数据文件，添加 AI 字段（description, use_cases, tags, output_targets）
-- [ ] T036 [US2] 创建单元测试 `tests/unit/test_recipe_registry.py`，测试三级查找路径、优先级、来源标注、同名 Recipe 处理
+- [X] T030 [P] [US2] 在 `src/auvima/cli/commands.py` 中实现 `init` 命令，创建用户级目录结构：`~/.auvima/recipes/atomic/chrome/`, `atomic/system/`, `workflows/`
+- [X] T031 [P] [US2] 在 `src/auvima/cli/recipe_commands.py` 中实现 `recipe copy <name>` 命令，将示例 Recipe 复制到用户级目录（脚本 + 元数据文件）
+- [X] T032 [US2] 在 `src/auvima/recipes/registry.py` 的 `scan()` 方法中实现来源标注逻辑：标记 Recipe 为 `Project` / `User` / `Example` 来源
+- [X] T033 [US2] 在 `src/auvima/cli/recipe_commands.py` 的 `list` 命令中显示来源标签（表格格式的 SOURCE 列，JSON 格式的 source 字段）
+- [X] T034 [US2] 迁移所有现有 Recipe 到 `examples/atomic/chrome/`：`youtube_extract_video_transcript.js/md`, `x_extract_tweet_with_comments.js/md`, `test_inspect_tab.js/md`
+- [X] T035 [US2] 为所有迁移的 Recipe 更新元数据文件，添加 AI 字段（description, use_cases, tags, output_targets）
+- [X] T036 [US2] 创建单元测试 `tests/unit/recipe/test_recipe_registry.py`，测试三级查找路径、优先级、来源标注、同名 Recipe 处理
 
 **Checkpoint**: 用户级 Recipe 与包代码完全分离，升级不影响自定义 Recipe
 

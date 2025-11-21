@@ -260,14 +260,110 @@ def run_recipe(
             OutputHandler.handle(result, 'clipboard')
             if result.get('success'):
                 click.echo("✓ 结果已复制到剪贴板", err=True)
-        
+
         # 如果执行失败，返回非零退出码
         if not result.get('success'):
             sys.exit(3)
-    
+
     except RecipeError as e:
         click.echo(f"错误: {e}", err=True)
         sys.exit(1)
     except Exception as e:
         click.echo(f"错误: {e}", err=True)
+        sys.exit(1)
+
+
+@recipe_group.command('copy')
+@click.argument('name')
+@click.option(
+    '--force',
+    is_flag=True,
+    help='覆盖已存在的 Recipe'
+)
+def copy_recipe(name: str, force: bool):
+    """
+    将示例 Recipe 复制到用户级目录
+
+    将指定的示例 Recipe（脚本 + 元数据文件）复制到 ~/.auvima/recipes/，
+    保持原有的目录结构（atomic/chrome, atomic/system, workflows）。
+    """
+    import shutil
+    from pathlib import Path
+
+    try:
+        # 初始化注册表并查找 Recipe
+        registry = RecipeRegistry()
+        registry.scan()
+
+        recipe = registry.find(name)
+
+        # 检查是否为示例 Recipe
+        if recipe.source != 'Example':
+            click.echo(f"错误: '{name}' 不是示例 Recipe（来源: {recipe.source}）", err=True)
+            click.echo("只能复制示例 Recipe 到用户目录", err=True)
+            sys.exit(1)
+
+        # 确定目标目录
+        user_home = Path.home()
+        user_recipes_dir = user_home / '.auvima' / 'recipes'
+
+        # 检查用户目录是否存在
+        if not user_recipes_dir.exists():
+            click.echo(f"错误: 用户级 Recipe 目录不存在: {user_recipes_dir}", err=True)
+            click.echo("请先运行 'auvima init' 初始化目录结构", err=True)
+            sys.exit(1)
+
+        # 计算相对路径（相对于 examples/ 目录）
+        script_path = recipe.script_path
+        metadata_path = recipe.metadata_path
+
+        # 找到 examples/ 目录
+        examples_dir = None
+        for parent in script_path.parents:
+            if parent.name == 'examples':
+                examples_dir = parent
+                break
+
+        if not examples_dir:
+            click.echo(f"错误: 无法确定示例 Recipe 的目录结构", err=True)
+            sys.exit(1)
+
+        # 计算相对路径
+        rel_script_path = script_path.relative_to(examples_dir)
+        rel_metadata_path = metadata_path.relative_to(examples_dir)
+
+        # 目标路径
+        dest_script_path = user_recipes_dir / rel_script_path
+        dest_metadata_path = user_recipes_dir / rel_metadata_path
+
+        # 检查是否已存在
+        if dest_script_path.exists() or dest_metadata_path.exists():
+            if not force:
+                click.echo(f"错误: Recipe '{name}' 已存在于用户目录", err=True)
+                click.echo(f"  脚本: {dest_script_path}", err=True)
+                click.echo(f"  元数据: {dest_metadata_path}", err=True)
+                click.echo("使用 --force 覆盖现有文件", err=True)
+                sys.exit(1)
+
+        # 创建目标目录
+        dest_script_path.parent.mkdir(parents=True, exist_ok=True)
+        dest_metadata_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # 复制文件
+        shutil.copy2(script_path, dest_script_path)
+        shutil.copy2(metadata_path, dest_metadata_path)
+
+        # 输出结果
+        click.echo(f"✓ Recipe '{name}' 已复制到用户目录:")
+        click.echo(f"  脚本: {dest_script_path}")
+        click.echo(f"  元数据: {dest_metadata_path}")
+        click.echo(f"\n现在可以编辑这些文件以自定义 Recipe")
+
+    except RecipeNotFoundError as e:
+        click.echo(f"错误: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"错误: {e}", err=True)
+        import traceback
+        traceback.print_exc()
         sys.exit(1)

@@ -54,12 +54,18 @@ class RecipeRegistry:
     
     def _get_source_label(self, path: Path) -> str:
         """根据路径返回来源标签"""
-        if '.auvima' in path.parts and Path.cwd() in path.parents:
+        # 项目级：当前工作目录下的 .auvima/recipes/
+        project_path = Path.cwd() / '.auvima' / 'recipes'
+        if path == project_path or project_path in path.parents:
             return 'Project'
-        elif path.parent == Path.home() / '.auvima':
+
+        # 用户级：用户家目录下的 .auvima/recipes/
+        user_path = Path.home() / '.auvima' / 'recipes'
+        if path == user_path or user_path in path.parents:
             return 'User'
-        else:
-            return 'Example'
+
+        # 示例级：其他路径（通常是 examples/）
+        return 'Example'
     
     def _scan_directory(self, base_path: Path, source: str) -> None:
         """递归扫描目录，查找 Recipe 元数据文件"""
