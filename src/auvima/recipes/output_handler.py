@@ -63,8 +63,11 @@ class OutputHandler:
             import pyperclip
         except ImportError:
             raise RuntimeError(
-                "clipboard 输出需要 pyperclip 包。\n"
-                "安装方法: pip install pyperclip 或 uv add pyperclip"
+                "clipboard 输出需要安装可选依赖 pyperclip。\n"
+                "安装方法:\n"
+                "  pip install auvima[clipboard]  # 仅剪贴板功能\n"
+                "  pip install auvima[all]         # 所有可选功能\n"
+                "  uv add --optional clipboard pyperclip  # uv 用户"
             )
         
         json_str = json.dumps(data, ensure_ascii=False)

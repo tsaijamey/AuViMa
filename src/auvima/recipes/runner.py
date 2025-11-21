@@ -169,6 +169,15 @@ class RecipeRunner:
                     stderr=result.stderr
                 )
 
+            # 检查输出大小（10MB 限制）
+            if len(result.stdout) > 10 * 1024 * 1024:  # 10MB
+                raise RecipeExecutionError(
+                    recipe_name=script_path.stem,
+                    runtime='chrome-js',
+                    exit_code=-1,
+                    stderr=f"Recipe 输出过大: {len(result.stdout) / 1024 / 1024:.2f}MB (限制: 10MB)"
+                )
+
             # 解析 JSON 输出
             try:
                 # exec-js 的输出可能是纯文本或 JSON
@@ -220,6 +229,15 @@ class RecipeRunner:
                     exit_code=result.returncode,
                     stdout=result.stdout,
                     stderr=result.stderr
+                )
+
+            # 检查输出大小（10MB 限制）
+            if len(result.stdout) > 10 * 1024 * 1024:  # 10MB
+                raise RecipeExecutionError(
+                    recipe_name=script_path.stem,
+                    runtime='python',
+                    exit_code=-1,
+                    stderr=f"Recipe 输出过大: {len(result.stdout) / 1024 / 1024:.2f}MB (限制: 10MB)"
                 )
 
             # 解析 JSON 输出
@@ -284,6 +302,15 @@ class RecipeRunner:
                     exit_code=result.returncode,
                     stdout=result.stdout,
                     stderr=result.stderr
+                )
+
+            # 检查输出大小（10MB 限制）
+            if len(result.stdout) > 10 * 1024 * 1024:  # 10MB
+                raise RecipeExecutionError(
+                    recipe_name=script_path.stem,
+                    runtime='shell',
+                    exit_code=-1,
+                    stderr=f"Recipe 输出过大: {len(result.stdout) / 1024 / 1024:.2f}MB (限制: 10MB)"
                 )
 
             # 解析 JSON 输出
