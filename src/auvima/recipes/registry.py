@@ -205,3 +205,31 @@ class RecipeRegistry:
             del self.recipes[recipe_name]
             # 可以在这里添加日志记录，但为了保持简单，我们只静默移除
             # print(f"警告: Recipe '{recipe_name}' 的依赖缺失: {', '.join(missing_deps)}", file=sys.stderr)
+
+    def find_all_sources(self, name: str) -> list[tuple[str, Path]]:
+        """
+        查找所有来源中是否存在同名 Recipe
+
+        Args:
+            name: Recipe 名称
+
+        Returns:
+            [(source, path), ...] 列表，按优先级排序
+        """
+        sources = []
+
+        for search_path in self.search_paths:
+            source = self._get_source_label(search_path)
+
+            # 扫描子目录查找同名 Recipe
+            for subdir in ['atomic/chrome', 'atomic/system', 'workflows']:
+                dir_path = search_path / subdir
+                if not dir_path.exists():
+                    continue
+
+                # 查找元数据文件
+                metadata_path = dir_path / f"{name}.md"
+                if metadata_path.exists():
+                    sources.append((source, metadata_path))
+
+        return sources

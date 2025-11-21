@@ -79,7 +79,7 @@ def list_recipes(source: str, recipe_type: str, output_format: str):
             if not recipes:
                 click.echo("未找到 Recipe")
                 return
-            
+
             # 表格输出
             click.echo(f"{'SOURCE':<10} {'TYPE':<10} {'NAME':<40} {'RUNTIME':<10} {'VERSION':<8}")
             click.echo("─" * 80)
@@ -88,6 +88,20 @@ def list_recipes(source: str, recipe_type: str, output_format: str):
                     f"{r.source:<10} {r.metadata.type:<10} {r.metadata.name:<40} "
                     f"{r.metadata.runtime:<10} {r.metadata.version:<8}"
                 )
+
+            # 检查是否有同名 Recipe 的情况
+            recipe_names = [r.metadata.name for r in recipes]
+            duplicates = []
+            for recipe_name in set(recipe_names):
+                all_sources = registry.find_all_sources(recipe_name)
+                if len(all_sources) > 1:
+                    duplicates.append((recipe_name, [s for s, _ in all_sources]))
+
+            if duplicates:
+                click.echo()
+                click.echo("注意: 以下 Recipe 在多个来源中存在（使用优先级高的）:")
+                for name, sources in duplicates:
+                    click.echo(f"  • {name}: {' > '.join(sources)}")
     
     except RecipeError as e:
         click.echo(f"错误: {e}", err=True)
@@ -140,6 +154,14 @@ def recipe_info(name: str, output_format: str):
             click.echo(f"运行时:   {m.runtime}")
             click.echo(f"版本:     {m.version}")
             click.echo(f"来源:     {recipe.source}")
+
+            # 检查是否有同名 Recipe 在其他来源
+            all_sources = registry.find_all_sources(name)
+            if len(all_sources) > 1:
+                other_sources = [s for s, _ in all_sources if s != recipe.source]
+                if other_sources:
+                    click.echo(f"          (同名 Recipe 也存在于: {', '.join(other_sources)})")
+
             click.echo(f"路径:     {recipe.script_path}")
             click.echo()
             click.echo("描述")

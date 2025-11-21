@@ -163,11 +163,11 @@
 
 ### Implementation for User Story 5
 
-- [ ] T051 [P] [US5] 在 `src/auvima/recipes/registry.py` 中实现项目级路径检测：检查当前工作目录的 `.auvima/recipes/` 是否存在
-- [ ] T052 [US5] 在 `src/auvima/recipes/registry.py` 的 `scan()` 方法中实现优先级逻辑：项目级 > 用户级 > 示例级，同名 Recipe 优先使用项目级
-- [ ] T053 [US5] 在 `src/auvima/cli/recipe_commands.py` 的 `list` 和 `info` 命令中添加优先级提示：当存在同名 Recipe 时，显示使用哪个来源
-- [ ] T054 [P] [US5] 创建项目级示例 Recipe 文档：`examples/workflows/project_specific_task.py` 和 `.md`，演示项目级 Recipe 使用
-- [ ] T055 [US5] 创建集成测试 `tests/integration/test_project_recipes.py`，测试项目级 Recipe 优先级、切换目录后行为、同名 Recipe 处理
+- [X] T051 [P] [US5] 在 `src/auvima/recipes/registry.py` 中实现项目级路径检测：检查当前工作目录的 `.auvima/recipes/` 是否存在
+- [X] T052 [US5] 在 `src/auvima/recipes/registry.py` 的 `scan()` 方法中实现优先级逻辑：项目级 > 用户级 > 示例级，同名 Recipe 优先使用项目级
+- [X] T053 [US5] 在 `src/auvima/cli/recipe_commands.py` 的 `list` 和 `info` 命令中添加优先级提示：当存在同名 Recipe 时，显示使用哪个来源
+- [X] T054 [P] [US5] 创建项目级示例 Recipe 文档：`examples/workflows/project_specific_task.py` 和 `.md`，演示项目级 Recipe 使用
+- [X] T055 [US5] 创建集成测试 `tests/integration/recipe/test_project_recipes.py`，测试项目级 Recipe 优先级、切换目录后行为、同名 Recipe 处理
 
 **Checkpoint**: 项目级 Recipe 正常工作，优先级正确，不影响其他级别 Recipe
 
