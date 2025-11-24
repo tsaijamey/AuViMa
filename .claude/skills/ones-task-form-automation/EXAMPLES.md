@@ -41,7 +41,7 @@
 ### 执行
 
 ```bash
-uv run auvima exec-js "(function() {
+uv run frago exec-js "(function() {
   const modal = document.querySelectorAll('.ones-modal')[0];
 
   const fillInput = (el, val) => {
@@ -138,7 +138,7 @@ uv run auvima exec-js "(function() {
 ### 执行
 
 ```bash
-uv run auvima exec-js "完整任务脚本" --return-value
+uv run frago exec-js "完整任务脚本" --return-value
 ```
 
 ---
@@ -482,12 +482,12 @@ uv run auvima exec-js "完整任务脚本" --return-value
 
 ---
 
-## 通过 AuViMa 执行的快捷脚本
+## 通过 Frago 执行的快捷脚本
 
 ### 脚本 1：快速填写标题和描述
 
 ```bash
-uv run auvima exec-js "(function() {
+uv run frago exec-js "(function() {
   const m = document.querySelectorAll('.ones-modal')[0];
   const f = (e, v) => {
     const s = Object.getOwnPropertyDescriptor((e.tagName === 'INPUT' ? window.HTMLInputElement : window.HTMLTextAreaElement).prototype, 'value').set;
@@ -505,7 +505,7 @@ uv run auvima exec-js "(function() {
 ### 脚本 2：查看当前表单数据
 
 ```bash
-uv run auvima exec-js "(function() {
+uv run frago exec-js "(function() {
   const m = document.querySelectorAll('.ones-modal')[0];
   return JSON.stringify({
     title: m.querySelector('#summary')?.value,

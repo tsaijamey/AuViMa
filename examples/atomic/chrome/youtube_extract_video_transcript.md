@@ -43,14 +43,14 @@ YouTube的"内容转文字"功能会将视频语音内容转换为带时间戳�
 
 ## 使用方法
 
-**配方执行器说明**：生成的配方本质上是JavaScript代码，通过CDP的Runtime.evaluate接口注入到浏览器中执行。因此，执行配方的标准方式是使用 `uv run auvima exec-js` 命令。
+**配方执行器说明**：生成的配方本质上是JavaScript代码，通过CDP的Runtime.evaluate接口注入到浏览器中执行。因此，执行配方的标准方式是使用 `uv run frago exec-js` 命令。
 
 1. 在浏览器中打开目标YouTube视频页面（必须是长视频，不能是Shorts）
 2. 确认浏览器界面语言与视频语音语言不同（例如中文界面+英文视频）
 3. 执行配方：
    ```bash
    # 将配方JS文件内容作为脚本注入浏览器执行
-   uv run auvima exec-js src/auvima/recipes/youtube_extract_video_transcript.js --return-value
+   uv run frago exec-js src/frago/recipes/youtube_extract_video_transcript.js --return-value
    ```
 4. 查看控制台输出的JSON格式转录文本
 
@@ -61,7 +61,7 @@ YouTube的"内容转文字"功能会将视频语音内容转换为带时间戳�
 
 ## 前置条件
 
-- Chrome CDP已连接（`uv run auvima status` 显示连接正常）
+- Chrome CDP已连接（`uv run frago status` 显示连接正常）
 - 已打开YouTube长视频页面（非Shorts短视频）
 - **关键**：浏览器界面语言与视频语音语言不同
   - 示例：中文界面 + 英文视频 ✅
@@ -104,7 +104,7 @@ YouTube的"内容转文字"功能会将视频语音内容转换为带时间戳�
 - **界面语言要求**：配方中硬编码了中文ARIA标签 `[aria-label="内容转文字"]`。如果使用其他语言界面（如英文界面的 "Show transcript"），需要修改此选择器
 - **加载时间**：转录内容较长的视频可能需要更长的加载时间，当前等待1.5秒。如果提取失败，可以增加等待时间
 - **视频类型限制**：仅适用于长视频，YouTube Shorts不支持"内容转文字"功能
-- 如果YouTube改版导致脚本失效，使用 `/auvima_recipe update youtube_extract_video_transcript` 更新
+- 如果YouTube改版导致脚本失效，使用 `/frago_recipe update youtube_extract_video_transcript` 更新
 
 ## 更新历史
 

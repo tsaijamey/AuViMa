@@ -40,18 +40,18 @@ dependencies: []
 
 ## 使用方法
 
-**配方执行器说明**：生成的配方本质上是JavaScript代码，通过CDP的Runtime.evaluate接口注入到浏览器中执行。因此，执行配方的标准方式是使用 `uv run auvima exec-js` 命令。
+**配方执行器说明**：生成的配方本质上是JavaScript代码，通过CDP的Runtime.evaluate接口注入到浏览器中执行。因此，执行配方的标准方式是使用 `uv run frago exec-js` 命令。
 
 1. 在浏览器中打开任意Upwork job详情页面（URL格式：`https://www.upwork.com/jobs/~<job_id>`）
 2. 确保Chrome CDP已连接（默认端口9222）
 3. 执行配方：
    ```bash
    # 将配方JS文件内容作为脚本注入浏览器执行
-   uv run auvima exec-js recipes/upwork_extract_job_details_as_markdown.js --return-value
+   uv run frago exec-js recipes/upwork_extract_job_details_as_markdown.js --return-value
    ```
 4. 配方会返回格式化的Markdown文本，你可以：
    - 直接复制到剪贴板
-   - 重定向到文件：`uv run auvima exec-js recipes/upwork_extract_job_details_as_markdown.js --return-value > job_details.md`
+   - 重定向到文件：`uv run frago exec-js recipes/upwork_extract_job_details_as_markdown.js --return-value > job_details.md`
    - 通过管道传递给其他工具进行后续处理
 
 **注意**：AI调试时请记住，你生成的 `.js` 文件不是在 Node.js 环境中运行，而是在浏览器的上下文中运行（类似 Chrome Console）。因此：
@@ -122,15 +122,15 @@ dependencies: []
 
 - **页面加载时机**：如果页面还在加载中（动态内容未完全渲染），可能提取到不完整的信息。建议在执行配方前添加短暂等待：
   ```bash
-  uv run auvima wait 2  # 等待2秒确保页面完全加载
-  uv run auvima exec-js recipes/upwork_extract_job_details_as_markdown.js --return-value
+  uv run frago wait 2  # 等待2秒确保页面完全加载
+  uv run frago exec-js recipes/upwork_extract_job_details_as_markdown.js --return-value
   ```
 
 - **提案数量隐私**：部分job可能隐藏提案数量，此时会显示"N/A"
 
 - **错误处理**：如果关键元素（如描述、客户信息）找不到，脚本会抛出明确的错误信息，指出缺失的选择器
 
-- **更新建议**：如Upwork改版导致脚本失效，使用 `/auvima.recipe update upwork_extract_job_details_as_markdown "Upwork改版，XXX选择器失效"` 更新配方
+- **更新建议**：如Upwork改版导致脚本失效，使用 `/frago.recipe update upwork_extract_job_details_as_markdown "Upwork改版，XXX选择器失效"` 更新配方
 
 ## 更新历史
 

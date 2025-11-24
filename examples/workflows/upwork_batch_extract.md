@@ -69,14 +69,14 @@ dependencies:
 
 **前置条件**：
 - Chrome 浏览器已启动并开启远程调试（`chrome --remote-debugging-port=9222`）
-- 已安装 AuViMa CLI 工具
+- 已安装 Frago CLI 工具
 - 依赖的 Recipe `upwork_extract_job_details_as_markdown` 可用
 
 **执行方式**：
 
 ```bash
 # 通过 Recipe CLI 执行
-uv run auvima recipe run upwork_batch_extract \
+uv run frago recipe run upwork_batch_extract \
   --params '{"urls": ["https://www.upwork.com/jobs/~1", "https://www.upwork.com/jobs/~2"], "output_dir": "./jobs/"}'
 
 # 或通过 params-file 传递参数
@@ -90,7 +90,7 @@ cat > params.json << EOF
 }
 EOF
 
-uv run auvima recipe run upwork_batch_extract --params-file params.json
+uv run frago recipe run upwork_batch_extract --params-file params.json
 ```
 
 **参数说明**：

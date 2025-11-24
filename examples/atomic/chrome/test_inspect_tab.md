@@ -34,13 +34,13 @@ dependencies: []
 
 ## 使用方法
 
-**配方执行器说明**：生成的配方本质上是JavaScript代码，通过CDP的Runtime.evaluate接口注入到浏览器中执行。因此，执行配方的标准方式是使用 `uv run auvima exec-js` 命令。
+**配方执行器说明**：生成的配方本质上是JavaScript代码，通过CDP的Runtime.evaluate接口注入到浏览器中执行。因此，执行配方的标准方式是使用 `uv run frago exec-js` 命令。
 
 1. 确保Chrome已启动并连接
 2. 执行配方：
    ```bash
    # 将配方JS文件内容作为脚本注入浏览器执行
-   uv run auvima exec-js src/auvima/recipes/test_inspect_tab.js --return-value
+   uv run frago exec-js src/frago/recipes/test_inspect_tab.js --return-value
    ```
 3. 查看控制台输出的格式化报告
 

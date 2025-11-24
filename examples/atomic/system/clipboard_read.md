@@ -35,10 +35,10 @@ outputs:
 
 ```bash
 # 标准输出
-uv run auvima recipe run clipboard_read
+uv run frago recipe run clipboard_read
 
 # 输出到文件
-uv run auvima recipe run clipboard_read --output-file clipboard.json
+uv run frago recipe run clipboard_read --output-file clipboard.json
 ```
 
 ## 前置条件

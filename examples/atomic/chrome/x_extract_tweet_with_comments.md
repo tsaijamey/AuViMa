@@ -44,17 +44,17 @@ dependencies: []
 
 ## 使用方法
 
-**配方执行器说明**：生成的配方本质上是JavaScript代码，通过CDP的Runtime.evaluate接口注入到浏览器中执行。因此，执行配方的标准方式是使用 `uv run auvima exec-js` 命令。
+**配方执行器说明**：生成的配方本质上是JavaScript代码，通过CDP的Runtime.evaluate接口注入到浏览器中执行。因此，执行配方的标准方式是使用 `uv run frago exec-js` 命令。
 
 1. 确保Chrome已启动并开启CDP调试端口（默认9222）
 2. 导航到目标推文页面：
    ```bash
-   uv run auvima navigate "https://x.com/username/status/123456789"
+   uv run frago navigate "https://x.com/username/status/123456789"
    ```
 3. 执行配方：
    ```bash
    # 将配方JS文件作为脚本注入浏览器执行，并获取返回值
-   uv run auvima exec-js src/auvima/recipes/x_extract_tweet_with_comments.js --return-value
+   uv run frago exec-js src/frago/recipes/x_extract_tweet_with_comments.js --return-value
    ```
 4. 配方将返回JSON格式的数据，包含：
    - `tweet`: 主推文信息（作者、内容、统计数据）
@@ -131,7 +131,7 @@ dependencies: []
   - 如果评论加载缓慢，可能无法达到40条目标
 - **登录状态**：配方假定用户已登录，未登录状态下某些评论可能不可见
 - **速率限制**：频繁执行配方可能触发X.com的速率限制，建议适当间隔
-- 如X.com改版导致脚本失效，使用 `/auvima.recipe update x_extract_tweet_with_comments` 更新配方
+- 如X.com改版导致脚本失效，使用 `/frago.recipe update x_extract_tweet_with_comments` 更新配方
 
 ## 更新历史
 

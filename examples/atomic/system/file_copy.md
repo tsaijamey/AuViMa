@@ -49,14 +49,14 @@ outputs:
 
 ```bash
 # 通过命令行参数
-uv run auvima recipe run file_copy --params '{"source_path": "/path/to/source.txt", "dest_path": "/path/to/dest.txt"}'
+uv run frago recipe run file_copy --params '{"source_path": "/path/to/source.txt", "dest_path": "/path/to/dest.txt"}'
 
 # 通过参数文件
 echo '{"source_path": "/path/to/source.txt", "dest_path": "/path/to/dest.txt"}' > params.json
-uv run auvima recipe run file_copy --params-file params.json
+uv run frago recipe run file_copy --params-file params.json
 
 # 输出到文件
-uv run auvima recipe run file_copy --params '{"source_path": "a.txt", "dest_path": "b.txt"}' --output-file result.json
+uv run frago recipe run file_copy --params '{"source_path": "a.txt", "dest_path": "b.txt"}' --output-file result.json
 ```
 
 ## 前置条件

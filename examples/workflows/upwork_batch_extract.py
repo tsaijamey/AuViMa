@@ -12,8 +12,8 @@ import sys
 import time
 from pathlib import Path
 
-# 从 AuViMa 包导入 RecipeRunner
-from auvima.recipes import RecipeRunner, RecipeExecutionError
+# 从 Frago 包导入 RecipeRunner
+from frago.recipes import RecipeRunner, RecipeExecutionError
 
 
 def main():
@@ -61,10 +61,10 @@ def main():
         print(f"处理第 {idx}/{len(urls)} 个职位: {url}", file=sys.stderr)
 
         try:
-            # 1. 导航到 URL（使用 auvima navigate 命令）
+            # 1. 导航到 URL（使用 frago navigate 命令）
             import subprocess
             nav_result = subprocess.run(
-                ["uv", "run", "auvima", "navigate", url],
+                ["uv", "run", "frago", "navigate", url],
                 capture_output=True,
                 text=True,
                 timeout=30

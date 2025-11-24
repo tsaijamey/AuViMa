@@ -1,4 +1,4 @@
-# AuViMa Stealth 模式使用指南
+# Frago Stealth 模式使用指南
 
 ## 概述
 
@@ -45,12 +45,12 @@ launcher = ChromeCDPLauncher()
 launcher.launch()
 ```
 
-### 3. 配合 AuViMa CDP 客户端使用反检测脚本
+### 3. 配合 Frago CDP 客户端使用反检测脚本
 
 Stealth 模式的启动参数已经包含基础反检测，但要完全绕过检测，需要在每个新页面加载前注入反检测脚本：
 
 ```python
-from auvima.cdp.session import CDPSession
+from frago.cdp.session import CDPSession
 
 # 创建 CDP 会话
 with CDPSession() as session:
@@ -73,14 +73,14 @@ with CDPSession() as session:
 
 ```bash
 # 在浏览器中打开
-file:///home/yammi/repos/AuViMa/test_stealth.html
+file:///home/yammi/repos/Frago/test_stealth.html
 ```
 
-或使用 AuViMa CLI：
+或使用 Frago CLI：
 
 ```bash
-uv run auvima navigate "file:///home/yammi/repos/AuViMa/test_stealth.html"
-uv run auvima screenshot test_result.png
+uv run frago navigate "file:///home/yammi/repos/Frago/test_stealth.html"
+uv run frago screenshot test_result.png
 ```
 
 ## 反检测技术说明
@@ -155,7 +155,7 @@ Object.defineProperty(navigator, 'connection', {
 ### 问题1: 仍然被检测为 headless
 
 **解决方案**：
-1. 确认 `stealth.js` 已正确注入（检查控制台是否有 `[AuViMa Stealth]` 日志）
+1. 确认 `stealth.js` 已正确注入（检查控制台是否有 `[Frago Stealth]` 日志）
 2. 在 `Page.addScriptToEvaluateOnNewDocument` 中注入脚本，而非页面加载后
 3. 检查网站具体检测哪个特征，针对性修改脚本
 

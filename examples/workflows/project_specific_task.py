@@ -35,7 +35,7 @@ def main():
         project_name = Path.cwd().name
 
     # 检查是否在项目级环境中
-    project_recipe_dir = Path.cwd() / '.auvima' / 'recipes'
+    project_recipe_dir = Path.cwd() / '.frago' / 'recipes'
     is_project_level = project_recipe_dir.exists()
 
     # 收集项目信息

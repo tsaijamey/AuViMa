@@ -101,11 +101,11 @@ fillTextField(titleField, '任务标题');
 - [ ] 选择负责人（可选）
 - [ ] 验证填写结果
 
-## 通过 AuViMa 执行
+## 通过 Frago 执行
 
 ```bash
 # 基础示例
-uv run auvima exec-js "(function() {
+uv run frago exec-js "(function() {
   const modal = document.querySelectorAll('.ones-modal')[0];
   const titleInput = modal.querySelector('#summary');
 

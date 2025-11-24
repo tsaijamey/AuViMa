@@ -83,13 +83,13 @@ version: "1.0.0"
 
 ```bash
 # 提取当前项目最近 10 个 commit
-uv run auvima recipe run git_extract_commits_to_ones_tasks \
-  --params '{"project_path": "/home/yammi/repos/AuViMa"}'
+uv run frago recipe run git_extract_commits_to_ones_tasks \
+  --params '{"project_path": "/home/yammi/repos/Frago"}'
 
 # 提取指定范围的 commit
-uv run auvima recipe run git_extract_commits_to_ones_tasks \
+uv run frago recipe run git_extract_commits_to_ones_tasks \
   --params '{
-    "project_path": "/home/yammi/repos/AuViMa",
+    "project_path": "/home/yammi/repos/Frago",
     "commit_range": "HEAD~20..HEAD"
   }'
 ```
@@ -98,7 +98,7 @@ uv run auvima recipe run git_extract_commits_to_ones_tasks \
 
 ```bash
 # 生成 Markdown 文件
-uv run auvima recipe run git_extract_commits_to_ones_tasks \
+uv run frago recipe run git_extract_commits_to_ones_tasks \
   --params '{
     "project_path": "/home/yammi/repos/ChimeOS",
     "commit_range": "HEAD~15..HEAD",
@@ -121,12 +121,12 @@ uv run auvima recipe run git_extract_commits_to_ones_tasks \
 
 **执行配方**：
 ```bash
-uv run auvima recipe run git_extract_commits_to_ones_tasks \
+uv run frago recipe run git_extract_commits_to_ones_tasks \
   --params '{
-    "project_path": "/home/yammi/repos/AuViMa",
+    "project_path": "/home/yammi/repos/Frago",
     "output_file": "tasks.md",
     "author_mapping_file": "author_mapping.json",
-    "project_name": "[Scrum] AuViMa 自动化框架"
+    "project_name": "[Scrum] Frago 自动化框架"
   }'
 ```
 
@@ -134,9 +134,9 @@ uv run auvima recipe run git_extract_commits_to_ones_tasks \
 
 ```bash
 # 提取两个版本之间的 commit
-uv run auvima recipe run git_extract_commits_to_ones_tasks \
+uv run frago recipe run git_extract_commits_to_ones_tasks \
   --params '{
-    "project_path": "/home/yammi/repos/AuViMa",
+    "project_path": "/home/yammi/repos/Frago",
     "commit_range": "v1.0.0..v2.0.0",
     "output_file": "release_tasks_v2.0.0.md"
   }'
@@ -145,7 +145,7 @@ uv run auvima recipe run git_extract_commits_to_ones_tasks \
 ## 前置条件
 
 1. **Git 仓库**：目标路径必须是有效的 Git 仓库（包含 `.git` 目录）
-2. **Python 环境**：Python 3.9+（AuViMa 项目已满足）
+2. **Python 环境**：Python 3.9+（Frago 项目已满足）
 3. **可选依赖**：
    - 如果使用 YAML 格式的作者映射文件，需要安装 `pyyaml`
    - 如果使用 JSON 格式，无需额外依赖
@@ -155,7 +155,7 @@ uv run auvima recipe run git_extract_commits_to_ones_tasks \
 ### `project_path`（必需）
 - **类型**: string
 - **说明**: Git 项目的**绝对路径**
-- **示例**: `"/home/yammi/repos/AuViMa"`
+- **示例**: `"/home/yammi/repos/Frago"`
 
 ### `commit_range`（可选）
 - **类型**: string
@@ -200,7 +200,7 @@ uv run auvima recipe run git_extract_commits_to_ones_tasks \
 {
   "success": true,
   "commits_count": 5,
-  "output_file": "/home/yammi/repos/AuViMa/tasks_2025-11-24.md",
+  "output_file": "/home/yammi/repos/Frago/tasks_2025-11-24.md",
   "message": "已生成 5 个任务到 tasks_2025-11-24.md"
 }
 ```
@@ -219,7 +219,7 @@ uv run auvima recipe run git_extract_commits_to_ones_tasks \
 ### 基本信息
 
 - **Title**: 添加用户登录功能
-- **Project**: [Scrum] AuViMa 自动化框架
+- **Project**: [Scrum] Frago 自动化框架
 - **Issue type**: Task
 - **任务类型**: 新功能开发
 - **负责人**: 蔡佳鸣
@@ -391,7 +391,7 @@ author_mapping:
 
 ```bash
 # 提取本周的 commit（假设本周有 15 个 commit）
-uv run auvima recipe run git_extract_commits_to_ones_tasks \
+uv run frago recipe run git_extract_commits_to_ones_tasks \
   --params '{
     "project_path": "/home/yammi/repos/ChimeOS",
     "commit_range": "HEAD~15..HEAD",
@@ -408,12 +408,12 @@ uv run auvima recipe run git_extract_commits_to_ones_tasks \
 **需求**：生成 v1.0 到 v2.0 之间的所有功能和修复。
 
 ```bash
-uv run auvima recipe run git_extract_commits_to_ones_tasks \
+uv run frago recipe run git_extract_commits_to_ones_tasks \
   --params '{
-    "project_path": "/home/yammi/repos/AuViMa",
+    "project_path": "/home/yammi/repos/Frago",
     "commit_range": "v1.0.0..v2.0.0",
     "output_file": "release_notes_v2.0.0.md",
-    "project_name": "[Release] AuViMa v2.0.0"
+    "project_name": "[Release] Frago v2.0.0"
   }'
 ```
 
@@ -422,7 +422,7 @@ uv run auvima recipe run git_extract_commits_to_ones_tasks \
 **需求**：提取最近 5 个 commit 用于代码审查。
 
 ```bash
-uv run auvima recipe run git_extract_commits_to_ones_tasks \
+uv run frago recipe run git_extract_commits_to_ones_tasks \
   --params '{
     "project_path": "/home/yammi/repos/frago",
     "commit_range": "HEAD~5..HEAD",
@@ -436,9 +436,9 @@ uv run auvima recipe run git_extract_commits_to_ones_tasks \
 
 ```bash
 # 输出到终端，可以使用 less 查看
-uv run auvima recipe run git_extract_commits_to_ones_tasks \
+uv run frago recipe run git_extract_commits_to_ones_tasks \
   --params '{
-    "project_path": "/home/yammi/repos/AuViMa",
+    "project_path": "/home/yammi/repos/Frago",
     "commit_range": "HEAD~3..HEAD"
   }' | less
 ```
@@ -538,9 +538,9 @@ def create_ones_task(task_data):
 修改脚本支持时间范围参数：
 
 ```bash
-uv run auvima recipe run git_extract_commits_to_ones_tasks \
+uv run frago recipe run git_extract_commits_to_ones_tasks \
   --params '{
-    "project_path": "/home/yammi/repos/AuViMa",
+    "project_path": "/home/yammi/repos/Frago",
     "since": "2025-11-01",
     "until": "2025-11-24"
   }'

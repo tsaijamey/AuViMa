@@ -40,7 +40,7 @@ dependencies: []
 
 这是一个项目级 Recipe 示例，演示如何在项目目录下创建专属的自动化任务。
 
-项目级 Recipe 存储在项目根目录的 `.auvima/recipes/` 目录中，具有最高优先级：
+项目级 Recipe 存储在项目根目录的 `.frago/recipes/` 目录中，具有最高优先级：
 - **优先级**: Project > User > Example
 - **用途**: 项目特定的自动化流程、覆盖全局 Recipe
 - **版本管理**: 与项目代码一起提交到 Git
@@ -51,14 +51,14 @@ dependencies: []
 
 1. 在项目根目录创建目录结构：
    ```bash
-   mkdir -p .auvima/recipes/workflows
-   mkdir -p .auvima/recipes/atomic/chrome
-   mkdir -p .auvima/recipes/atomic/system
+   mkdir -p .frago/recipes/workflows
+   mkdir -p .frago/recipes/atomic/chrome
+   mkdir -p .frago/recipes/atomic/system
    ```
 
 2. 将 Recipe 脚本和元数据文件放入对应目录：
    ```
-   .auvima/
+   .frago/
    └── recipes/
        ├── atomic/
        │   ├── chrome/
@@ -74,32 +74,32 @@ dependencies: []
 
 3. 执行项目级 Recipe：
    ```bash
-   # AuViMa 会自动优先使用项目级 Recipe
-   uv run auvima recipe run my_chrome_recipe
+   # Frago 会自动优先使用项目级 Recipe
+   uv run frago recipe run my_chrome_recipe
    ```
 
 ### 执行此示例
 
 **前置条件**：
-- 已安装 AuViMa CLI 工具
+- 已安装 Frago CLI 工具
 - 在项目根目录执行
 
 **执行方式**：
 
 ```bash
 # 使用默认参数
-uv run auvima recipe run project_specific_task
+uv run frago recipe run project_specific_task
 
 # 指定项目名称
-uv run auvima recipe run project_specific_task \
+uv run frago recipe run project_specific_task \
   --params '{"project_name": "MyProject"}'
 ```
 
 ## 前置条件
 
 - Python 3.9+ 环境
-- AuViMa CLI 工具已安装
-- 在项目目录中执行（有 .auvima/recipes/ 目录）
+- Frago CLI 工具已安装
+- 在项目目录中执行（有 .frago/recipes/ 目录）
 
 ## 预期输出
 
@@ -123,13 +123,13 @@ uv run auvima recipe run project_specific_task \
 
 当存在同名 Recipe 时，系统按以下优先级选择：
 
-1. **项目级** (`.auvima/recipes/`) - 最高优先级
-2. **用户级** (`~/.auvima/recipes/`) - 中等优先级
+1. **项目级** (`.frago/recipes/`) - 最高优先级
+2. **用户级** (`~/.frago/recipes/`) - 中等优先级
 3. **示例级** (`examples/`) - 最低优先级
 
 **示例场景**：
-- 如果 `.auvima/recipes/workflows/project_workflow.py` 存在
-- 同时 `~/.auvima/recipes/workflows/project_workflow.py` 也存在
+- 如果 `.frago/recipes/workflows/project_workflow.py` 存在
+- 同时 `~/.frago/recipes/workflows/project_workflow.py` 也存在
 - 系统会使用项目级的 Recipe（优先级更高）
 
 ### 查看优先级
@@ -137,7 +137,7 @@ uv run auvima recipe run project_specific_task \
 使用 `recipe info` 命令查看 Recipe 来源和优先级：
 
 ```bash
-uv run auvima recipe info project_specific_task
+uv run frago recipe info project_specific_task
 ```
 
 输出示例：
@@ -153,38 +153,38 @@ Recipe: project_specific_task
 版本:     1.0
 来源:     Project
           (同名 Recipe 也存在于: User, Example)
-路径:     .auvima/recipes/workflows/project_specific_task.py
+路径:     .frago/recipes/workflows/project_specific_task.py
 ```
 
 ### 版本管理建议
 
 **推荐做法**：
-- 将 `.auvima/recipes/` 目录提交到 Git
+- 将 `.frago/recipes/` 目录提交到 Git
 - 在 `.gitignore` 中排除临时文件和敏感数据
 - 团队成员共享项目特定的 Recipe
 
 **不推荐**：
-- 将 `.auvima/` 整体加入 `.gitignore`（会丢失项目 Recipe）
+- 将 `.frago/` 整体加入 `.gitignore`（会丢失项目 Recipe）
 - 在项目 Recipe 中硬编码绝对路径
 
 ### 覆盖全局 Recipe
 
 如果需要为特定项目定制全局 Recipe 的行为：
 
-1. 从 `examples/` 或 `~/.auvima/recipes/` 复制 Recipe 到项目
+1. 从 `examples/` 或 `~/.frago/recipes/` 复制 Recipe 到项目
 2. 修改项目级 Recipe 实现项目特定逻辑
 3. 保持相同的 Recipe 名称
 
 **示例**：
 ```bash
 # 复制全局 Recipe 到项目
-uv run auvima recipe copy youtube_extract_video_transcript
+uv run frago recipe copy youtube_extract_video_transcript
 
 # 修改项目级 Recipe（添加项目特定的后处理）
-vim .auvima/recipes/atomic/chrome/youtube_extract_video_transcript.js
+vim .frago/recipes/atomic/chrome/youtube_extract_video_transcript.js
 
 # 执行时会使用项目级版本
-uv run auvima recipe run youtube_extract_video_transcript
+uv run frago recipe run youtube_extract_video_transcript
 ```
 
 ## 更新历史
