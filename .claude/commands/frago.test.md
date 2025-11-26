@@ -14,10 +14,10 @@ description: "测试并验证现有的Frago配方脚本"
 
 ### 1. 定位配方
 
-用户可能会提供完整文件名、路径或仅仅是一个关键词。
-1. 使用 `ls src/frago/recipes/` 或 `glob` 查找匹配的 `.js` 和 `.md` 文件。
+用户可能会提供完整目录名、路径或仅仅是一个关键词。
+1. 使用 `uv run frago recipe info <配方名>` 或 `uv run frago recipe list` 查找配方。
 2. 如果找到多个匹配项，列出它们并请用户明确指定。
-3. **关键**：必须同时存在 `.js` (执行逻辑) 和 `.md` (文档说明) 文件。
+3. **配方目录结构**：每个配方是一个目录，包含 `recipe.js/py` (执行逻辑) 和 `recipe.md` (文档说明)。
 
 ### 2. 理解需求 (读取文档)
 
@@ -48,10 +48,14 @@ description: "测试并验证现有的Frago配方脚本"
 
 ### 4. 执行测试
 
-使用 `exec-js` 的文件输入模式执行配方。**必须**加上 `--return-value` 以便获取脚本的返回结果。
-
+**推荐方式**：使用 Recipe 系统执行：
 ```bash
-uv run frago exec-js src/frago/recipes/<确切文件名>.js --return-value
+uv run frago recipe run <配方名> --output-file result.json
+```
+
+**传统方式**：使用 `exec-js` 直接执行（chrome-js 配方）：
+```bash
+uv run frago exec-js examples/atomic/chrome/<配方名>/recipe.js --return-value
 ```
 
 ### 5. 结果验证与报告
@@ -107,7 +111,8 @@ uv run frago exec-js src/frago/recipes/<确切文件名>.js --return-value
 
 ```bash
 # 查找配方
-ls src/frago/recipes/ | grep <keyword>
+uv run frago recipe list
+uv run frago recipe info <配方名>
 
 # 检查状态
 uv run frago status
@@ -115,19 +120,22 @@ uv run frago status
 # 获取当前URL
 uv run frago exec-js "window.location.href" --return-value
 
-# 执行配方 (核心)
-uv run frago exec-js <path_to_recipe.js> --return-value
+# 执行配方 (推荐)
+uv run frago recipe run <配方名>
+
+# 直接执行 chrome-js 配方 (传统方式)
+uv run frago exec-js examples/atomic/chrome/<配方名>/recipe.js --return-value
 ```
 
 ---
 
 ## 示例交互
 
-**用户**: `/frago.test youtube_transcript`
+**用户**: `/frago.test youtube_extract_video_transcript`
 
 **你**:
-1. 找到 `src/frago/recipes/youtube_extract_video_transcript.js`。
-2. 读取对应的 `.md`，发现前置条件是"打开YouTube视频页面"。
+1. 运行 `uv run frago recipe info youtube_extract_video_transcript` 确认配方存在。
+2. 读取 `examples/atomic/chrome/youtube_extract_video_transcript/recipe.md`，发现前置条件是"打开YouTube视频页面"。
 3. 检查当前URL。如果是在 `github.com`，提示用户先导航。
-4. 如果URL正确，执行 `uv run frago exec-js ...`。
+4. 如果URL正确，执行 `uv run frago recipe run youtube_extract_video_transcript`。
 5. 输出测试报告。

@@ -14,6 +14,128 @@ description: "执行一次性的复杂任务（使用完整的frago工具集）"
 - **成功标准**：任务目标达成 + 结果可验证
 - **工作空间**：使用 `projects/` 目录（与 `/frago.run` 共享基础设施）
 
+### 🔒 工作空间隔离原则（必须遵守）
+
+**所有产出物必须放在 Project 工作空间内**：
+
+```
+projects/<project_id>/       # Project 工作空间根目录
+├── project.json             # 元数据
+├── logs/
+│   └── execution.jsonl      # 执行日志
+├── scripts/                 # 执行脚本
+├── screenshots/             # 截图
+├── outputs/                 # 任务产出物（数据、报告、视频等）
+│   ├── video_script.json    # 生成的脚本实例
+│   ├── final_video.mp4      # 视频产出
+│   └── analysis.json        # 分析结果
+└── temp/                    # 临时文件（任务完成后清理）
+```
+
+**禁止的行为**：
+- ❌ 在桌面、/tmp、下载目录等外部位置创建文件
+- ❌ 配方执行时不指定 output_dir，使用配方默认位置
+- ❌ 产出物散落在工作空间外的目录
+
+**正确做法**：
+- ✅ 所有文件使用 `projects/<project_id>/` 下的路径
+- ✅ 调用配方时明确指定 `output_dir` 为工作空间内的目录
+- ✅ 临时文件放在 `temp/`，任务完成后清理
+
+```bash
+# 正确：所有输出都在工作空间内
+uv run frago recipe run video_produce_from_script \
+  --params '{
+    "script_file": "projects/<project_id>/outputs/video_script.json",
+    "output_dir": "projects/<project_id>/outputs/video"
+  }'
+
+# 错误：使用外部目录
+uv run frago recipe run video_produce_from_script \
+  --params '{"script_file": "~/Desktop/script.json"}'  # ❌ 禁止
+```
+
+### 🔐 单一运行互斥（Single Run Mutex）
+
+**系统仅允许一个活跃的 Project 上下文**。这是设计约束，确保工作聚焦。
+
+**互斥规则**：
+- 当 `set-context` 时，若已有其他活跃的 project，命令会失败并提示先释放
+- 同一 project 可以重复 `set-context`（恢复工作）
+- 任务完成后**必须**释放上下文
+
+**释放命令**：
+
+```bash
+# 释放当前上下文
+uv run frago run release
+```
+
+**典型工作流**：
+
+```bash
+# 1. 开始任务
+uv run frago run init "upwork python job apply"
+uv run frago run set-context upwork-python-job-apply
+
+# 2. 执行任务...
+
+# 3. 任务完成，释放上下文（必须！）
+uv run frago run release
+
+# 4. 开始新任务
+uv run frago run init "another task"
+uv run frago run set-context another-task
+```
+
+**如果忘记释放**：
+
+```bash
+# 尝试设置新上下文时会看到错误
+Error: Another run 'upwork-python-job-apply' is currently active.
+Run 'uv run frago run release' to release it first,
+or 'uv run frago run set-context upwork-python-job-apply' to continue it.
+```
+
+## 工具优先级（必须遵守）
+
+执行任务时，按以下优先级选择工具：
+
+```
+1. 已有配方 (Recipe)     ← 最优先：经过验证、可复用
+2. frago 命令            ← 次优先：跨 agent 通用
+3. Claude Code 内置工具  ← 最后：仅限 Claude Code 环境
+```
+
+### 为什么这个优先级很重要？
+
+- **配方**：已封装的可靠自动化流程，直接调用最高效
+- **frago 命令**：基于 CDP 的通用能力，任何 agent CLI 都能调用
+- **Claude Code 工具**：如 WebSearch、WebFetch 仅限 Claude Code 环境
+
+### 具体场景示例
+
+| 需求 | ❌ 不要 | ✅ 应该 |
+|------|--------|--------|
+| 搜索信息 | `WebSearch` | `uv run frago navigate "https://google.com/search?q=..."` + 提取结果 |
+| 查看网页 | `WebFetch` | `uv run frago navigate <url>` + `uv run frago get-content` |
+| 提取数据 | 手写 JS | 先查 `uv run frago recipe list` 是否有现成配方 |
+| 截图 | 无 | `uv run frago screenshot` 或 `uv run frago run screenshot` |
+
+### 搜索和浏览的正确方式
+
+```bash
+# 搜索（使用 CDP 而非 WebSearch）
+uv run frago navigate "https://www.google.com/search?q=python+tutorial"
+uv run frago exec-js "Array.from(document.querySelectorAll('.g')).map(e => ({title: e.querySelector('h3')?.textContent, url: e.querySelector('a')?.href})).filter(e => e.url)" --return-value
+
+# 查看网页（使用 CDP 而非 WebFetch）
+uv run frago navigate "https://example.com"
+uv run frago get-content  # 获取页面文本
+# 或
+uv run frago exec-js "document.body.innerText" --return-value
+```
+
 ## 可用工具
 
 ### 🔍 资源发现

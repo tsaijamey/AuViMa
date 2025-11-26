@@ -1,17 +1,22 @@
 ---
-name: video_browser_window_record
+name: linux_video_screen_crop_record
 type: atomic
 runtime: python
-description: "录制 Chrome 浏览器窗口视频，自动检测窗口位置和显示服务器类型"
+description: "Linux 专用 - 屏幕区域录制（ffmpeg crop 方式，窗口被遮挡时无法正确录制）"
 use_cases:
-  - "录制浏览器操作演示视频"
-  - "自动化视频制作流程中的屏幕录制步骤"
-  - "记录 Web 应用测试过程"
+  - "CI/CD 无头环境的屏幕录制"
+  - "无 OBS 环境时的备选方案"
+  - "简单的屏幕区域录制 (X11/Wayland)"
 tags:
   - video
   - screen-recording
   - ffmpeg
   - chrome
+  - linux
+  - x11
+  - wayland
+  - screen-crop
+  - fallback
 output_targets:
   - stdout
   - file
@@ -46,15 +51,20 @@ outputs:
     type: object
     description: "录制窗口的几何信息 {x, y, width, height}"
 dependencies: []
-version: "1.0.0"
+version: "1.1.0"
 system_packages: true  # 需要系统 dbus 库
+platform: linux
 ---
 
-# video_browser_window_record
+# linux_video_screen_crop_record
 
 ## 功能描述
 
-录制 Chrome 浏览器窗口的视频。自动检测显示服务器类型（X11/Wayland），定位 Chrome 窗口位置，使用 ffmpeg 进行屏幕录制。
+Linux 专用的 **屏幕区域录制** Recipe，使用 ffmpeg 录制 Chrome 窗口所在的屏幕区域。
+
+**注意**: 这是基于屏幕坐标的裁剪录制，如果 Chrome 窗口被其他窗口遮挡，会录到遮挡物。如需真正的窗口级录制，请使用 `obs_video_browser_window_record`。
+
+自动检测显示服务器类型（X11/Wayland），定位 Chrome 窗口位置，使用 ffmpeg 进行屏幕录制。
 
 支持的显示服务器：
 - **X11**: 使用 xdotool 获取窗口位置，ffmpeg x11grab 录制
@@ -107,4 +117,5 @@ uv run frago recipe run video_browser_window_record \
 
 | 日期 | 版本 | 变更说明 |
 |------|------|----------|
+| 2025-11-26 | v1.1.0 | 重命名为 linux_ 前缀，标识为 Linux 专用版本 |
 | 2025-11-26 | v1.0.0 | 初始版本，支持 X11 和 Wayland |

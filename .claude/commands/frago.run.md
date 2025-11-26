@@ -10,6 +10,81 @@ description: "执行AI主持的复杂浏览器自动化任务并管理run实例"
 
 ## 核心概念
 
+### 🔒 工作空间隔离原则（必须遵守）
+
+**所有产出物必须放在 Run 工作空间内**：
+
+```
+projects/<run_id>/           # Run 工作空间根目录
+├── run.json                 # Run 元数据
+├── logs/
+│   └── execution.jsonl      # 执行日志
+├── scripts/                 # 执行脚本
+├── screenshots/             # 截图
+├── outputs/                 # 任务产出物（数据、报告、视频等）
+└── temp/                    # 临时文件
+```
+
+**禁止的行为**：
+- ❌ 在桌面、/tmp、下载目录等外部位置创建文件
+- ❌ 配方执行时不指定 output_dir，使用默认位置
+- ❌ 产出物散落在不同目录
+
+**正确做法**：
+- ✅ 所有文件使用 `projects/<run_id>/` 下的相对路径
+- ✅ 调用配方时明确指定 `output_dir` 参数
+- ✅ 临时文件放在 `temp/`，完成后清理
+
+```bash
+# 正确：指定输出到工作空间
+uv run frago recipe run video_produce_from_script \
+  --params '{"script_file": "video_script.json", "output_dir": "projects/<run_id>/outputs"}'
+
+# 错误：使用默认或外部目录
+uv run frago recipe run video_produce_from_script \
+  --params '{"script_file": "video_script.json"}'  # ❌ 会输出到 video_output/
+```
+
+### 🔐 单一运行互斥（Single Run Mutex）
+
+**系统仅允许一个活跃的 Run 上下文**。这是设计约束，确保工作聚焦。
+
+**互斥规则**：
+- 当 `set-context` 时，若已有其他活跃的 run，命令会失败并提示先释放
+- 同一 run 可以重复 `set-context`（恢复工作）
+- 任务完成后**必须**释放上下文
+
+**释放命令**：
+
+```bash
+# 释放当前上下文
+uv run frago run release
+```
+
+**典型工作流**：
+
+```bash
+# 1. 开始任务
+uv run frago run set-context my-research
+
+# 2. 执行工作...
+
+# 3. 任务完成，释放上下文（必须！）
+uv run frago run release
+
+# 4. 开始新任务（或切换任务）
+uv run frago run set-context another-research
+```
+
+**如果忘记释放**：
+
+```bash
+# 尝试设置新上下文时会看到错误
+Error: Another run 'my-research' is currently active.
+Run 'uv run frago run release' to release it first,
+or 'uv run frago run set-context my-research' to continue it.
+```
+
 ### Run实例的作用（专注于Recipe创建前的探索调研）
 
 - **探索和调研**: Recipe创建前的信息收集
@@ -17,6 +92,39 @@ description: "执行AI主持的复杂浏览器自动化任务并管理run实例"
 - **Workflow构建**: 复杂流程的信息组织
 
 **重要**：run 系统专注于"探索期"，目标是收集足够的信息以创建 Recipe。如果需要执行一次性的复杂任务，请使用 `/frago.exec` 命令。
+
+### 🔧 工具优先级（必须遵守）
+
+执行调研任务时，按以下优先级选择工具：
+
+```
+1. 已有配方 (Recipe)     ← 最优先：经过验证、可复用
+2. frago 命令            ← 次优先：跨 agent 通用
+3. Claude Code 内置工具  ← 最后：仅限 Claude Code 环境
+```
+
+**为什么？**
+- frago 的 CDP 命令（navigate、exec-js 等）是**跨 agent 通用**的
+- 未来其他 agent CLI 可能没有 WebSearch/WebFetch，但都能调用 frago
+- 配方是已封装的可靠能力，直接复用最高效
+
+**具体场景**：
+
+| 需求 | ❌ 不要 | ✅ 应该 |
+|------|--------|--------|
+| 搜索信息 | `WebSearch` | `uv run frago navigate "https://google.com/search?q=..."` |
+| 查看网页 | `WebFetch` | `uv run frago navigate <url>` + `get-content` |
+| 提取数据 | 手写 JS | 先查 `uv run frago recipe list` 有无现成配方 |
+
+```bash
+# 搜索（使用 CDP 而非 WebSearch）
+uv run frago navigate "https://www.google.com/search?q=api+documentation"
+uv run frago get-content
+
+# 查看网页（使用 CDP 而非 WebFetch）
+uv run frago navigate "https://docs.example.com"
+uv run frago exec-js "document.body.innerText" --return-value
+```
 
 ### 结构化日志格式
 

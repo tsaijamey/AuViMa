@@ -4,10 +4,11 @@
 # dependencies = ["dbus-python"]
 # ///
 """
-Recipe: video_browser_window_record
-Description: 录制 Chrome 浏览器窗口视频
+Recipe: linux_video_screen_crop_record
+Description: Linux 专用 - 屏幕区域录制（ffmpeg crop 方式，窗口被遮挡时无法正确录制）
 Created: 2025-11-26
-Version: 1.0.0
+Version: 1.2.0
+Note: 如需真正的窗口级录制，请使用 obs_video_browser_window_record
 """
 
 import json

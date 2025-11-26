@@ -2,7 +2,7 @@
 name: video_produce_from_script
 type: workflow
 runtime: python
-description: "从视频脚本 JSON 文件自动生成完整视频，包括录屏、配音和合成"
+description: "从视频脚本 JSON 文件自动生成完整视频，包括录屏、配音和合成（跨平台）"
 use_cases:
   - "根据预定义脚本自动制作演示视频"
   - "批量生成教程或介绍视频"
@@ -12,6 +12,7 @@ tags:
   - workflow
   - automation
   - production
+  - cross-platform
 output_targets:
   - stdout
   - file
@@ -44,8 +45,7 @@ outputs:
 dependencies:
   - video_record_segment
   - video_merge_clips
-version: "1.0.0"
-system_packages: true  # 依赖 video_record_segment 需要系统 dbus
+version: "1.1.0"
 ---
 
 # video_produce_from_script
@@ -123,6 +123,8 @@ uv run frago recipe run video_produce_from_script \
 
 - Chrome CDP 已连接
 - ffmpeg 已安装
+- **macOS**: 需要授权屏幕录制权限
+- **Linux**: xdotool 已安装（X11 环境）
 - 所有依赖 Recipe 可用
 
 ## 预期输出
@@ -192,6 +194,7 @@ uv run frago recipe run video_produce_from_script \
 
 ## 注意事项
 
+- **跨平台支持**: 通过 `video_record_segment` 自动选择对应平台的录屏 Recipe
 - **顺序执行**: 段落按顺序逐个处理，不支持并行（避免 CDP 冲突）
 - **超时**: 每个段落超时 = duration + 120 秒
 - **部分成功**: 即使部分段落失败，仍会尝试合并成功的段落
@@ -200,4 +203,5 @@ uv run frago recipe run video_produce_from_script \
 
 | 日期 | 版本 | 变更说明 |
 |------|------|----------|
+| 2025-11-26 | v1.1.0 | 添加跨平台支持说明 |
 | 2025-11-26 | v1.0.0 | 初始版本 |

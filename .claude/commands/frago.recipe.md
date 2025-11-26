@@ -156,9 +156,17 @@ uv run frago pointer <selector>
 
 ### 4. 生成 Atomic Recipe 文件（chrome-js）
 
-对话结束后，**使用Write工具**创建两个文件。**注意：Markdown元数据文件必须与脚本文件同名！**
+对话结束后，**使用Write工具**创建配方目录。**注意：配方名称 = 目录名！**
 
-#### 文件1: `examples/atomic/chrome/<自解释文件名>.js`
+**目录结构**：
+```
+examples/atomic/chrome/<自解释目录名>/
+├── recipe.md      # 元数据 + 文档
+├── recipe.js      # 执行脚本
+└── examples/      # 可选：示例数据（如果配方需要输入模板）
+```
+
+#### 文件1: `examples/atomic/chrome/<自解释目录名>/recipe.js`
 
 JavaScript配方脚本：
 
@@ -230,7 +238,7 @@ JavaScript配方脚本：
 - 清晰的错误消息（包含选择器信息）
 - **验证选择器的选择**：选择步骤执行成功后"必然出现"的唯一元素
 
-#### 文件2: `examples/atomic/chrome/<自解释文件名>.md`
+#### 文件2: `examples/atomic/chrome/<自解释目录名>/recipe.md`
 
 **YAML Frontmatter 元数据** + **知识文档**：
 
@@ -274,7 +282,7 @@ uv run frago recipe run <recipe_name>
 **传统方式**（兼容）：
 ```bash
 # 直接通过 exec-js 执行
-uv run frago exec-js examples/atomic/chrome/<文件名>.js --return-value
+uv run frago exec-js examples/atomic/chrome/<自解释目录名>/recipe.js --return-value
 ```
 
 **注意**：配方在浏览器上下文运行，可使用 `document`、`window` 等 API，但不能使用 Node.js 模块。
@@ -305,7 +313,15 @@ uv run frago exec-js examples/atomic/chrome/<文件名>.js --return-value
 
 **当任务需要调用多个 Atomic Recipe 时**，生成 Python Workflow。
 
-#### 文件1: `examples/workflows/<workflow_name>.py`
+**目录结构**：
+```
+examples/workflows/<自解释目录名>/
+├── recipe.md      # 元数据 + 文档
+├── recipe.py      # 执行脚本
+└── examples/      # 可选：示例数据（如 VideoScript JSON 模板）
+```
+
+#### 文件1: `examples/workflows/<自解释目录名>/recipe.py`
 
 Python 编排脚本：
 
@@ -433,13 +449,13 @@ if __name__ == "__main__":
 - 输出 JSON 格式结果到 stdout
 - 错误信息输出到 stderr
 
-#### 文件2: `examples/workflows/<workflow_name>.md`
+#### 文件2: `examples/workflows/<自解释目录名>/recipe.md`
 
 **YAML Frontmatter 元数据** + **知识文档**：
 
 ```markdown
 ---
-name: <workflow_name>
+name: <自解释目录名>
 type: workflow
 runtime: python
 description: "<Workflow 功能描述>"
@@ -470,7 +486,7 @@ dependencies:
 version: "1.0.0"
 ---
 
-# <workflow_name>
+# <自解释目录名>
 
 ## 功能描述
 <详细说明 Workflow 的编排逻辑、处理流程和价值>
@@ -479,7 +495,7 @@ version: "1.0.0"
 
 ```bash
 # 执行 Workflow
-uv run frago recipe run <workflow_name> \
+uv run frago recipe run <自解释目录名> \
   --params '{"<param_name>": "<value>"}' \
   --output-file results.json
 ```
@@ -497,7 +513,7 @@ uv run frago recipe run <workflow_name> \
 ```json
 {
   "success": true,
-  "workflow": "<workflow_name>",
+  "workflow": "<自解释目录名>",
   "results": [
     { "step1": "..." },
     { "step2": "..." }
@@ -534,12 +550,12 @@ uv run frago recipe run <workflow_name> \
 
 2. **读取现有配方**：
    ```bash
-   # 使用Read工具读取
-   examples/atomic/chrome/<配方名>.js
-   examples/atomic/chrome/<配方名>.md
+   # 使用Read工具读取配方目录
+   examples/atomic/chrome/<配方名>/recipe.js
+   examples/atomic/chrome/<配方名>/recipe.md
    # 或
-   examples/workflows/<配方名>.py
-   examples/workflows/<配方名>.md
+   examples/workflows/<配方名>/recipe.py
+   examples/workflows/<配方名>/recipe.md
    ```
 
 3. **显示当前信息**：
@@ -614,10 +630,11 @@ uv run frago recipe list --format json
 6. **错误处理**：捕获 `RecipeExecutionError`
 
 ### 通用规则
-- **文件命名规范**：`<平台>_<动词>_<对象>.js/py`（全小写，snake_case）
-- **同名元数据文件**：脚本文件和元数据文件必须同名（仅后缀不同）
-- **YAML frontmatter**：必须包含 `name`, `type`, `runtime`, `description`, `version` 等字段
+- **目录命名规范**：`<平台>_<动词>_<对象>`（全小写，snake_case）
+- **统一文件名**：脚本文件叫 `recipe.js/py`，元数据文件叫 `recipe.md`
+- **YAML frontmatter**：`name` 字段 = 目录名，必须包含 `type`, `runtime`, `description`, `version` 等字段
 - **知识文档**：Frontmatter 后必须包含完整的知识文档（6个章节）
+- **示例数据**：如果配方需要输入模板（如 VideoScript JSON），放入 `examples/` 子目录
 
 ---
 

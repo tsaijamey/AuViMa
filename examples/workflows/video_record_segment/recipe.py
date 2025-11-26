@@ -5,9 +5,9 @@
 # ///
 """
 Workflow: video_record_segment
-Description: 录制单个视频段落，包括 CDP 操作、录屏和配音
+Description: 录制单个视频段落，包括 CDP 操作、录屏和配音（自动检测平台）
 Created: 2025-11-26
-Version: 1.0.0
+Version: 1.1.0
 """
 
 import json
@@ -15,8 +15,33 @@ import subprocess
 import sys
 import time
 import threading
+import platform
 from pathlib import Path
 from typing import Optional
+
+
+def get_screen_record_recipe(use_obs: bool = False) -> str:
+    """根据平台选择正确的屏幕录制 Recipe
+
+    Args:
+        use_obs: 是否使用 OBS 方案（推荐，支持窗口被遮挡时录制）
+                 False 则使用 ffmpeg crop 方案（CI/CD 或无 OBS 环境）
+
+    Returns:
+        Recipe 名称
+    """
+    if use_obs:
+        # OBS 方案：真正的窗口级录制，支持窗口被遮挡
+        return "obs_video_browser_window_record"
+
+    # ffmpeg crop 方案：屏幕区域录制，窗口被遮挡时会录到遮挡物
+    system = platform.system()
+    if system == "Darwin":
+        return "macos_video_screen_crop_record"
+    elif system == "Linux":
+        return "linux_video_screen_crop_record"
+    else:
+        raise RuntimeError(f"不支持的平台: {system}，仅支持 macOS 和 Linux")
 
 
 def run_frago_command(command: str, args: list = None) -> dict:
@@ -140,11 +165,13 @@ def record_with_actions(
     # 1. 启动录制（在后台线程）
     record_result = {"success": False}
     record_error = None
+    screen_record_recipe = get_screen_record_recipe()
+    print(f"使用屏幕录制 Recipe: {screen_record_recipe}", file=sys.stderr)
 
     def do_record():
         nonlocal record_result, record_error
         try:
-            record_result = run_recipe("video_browser_window_record", {
+            record_result = run_recipe(screen_record_recipe, {
                 "duration": duration,
                 "output_file": video_file
             })

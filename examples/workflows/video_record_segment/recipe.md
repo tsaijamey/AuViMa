@@ -2,7 +2,7 @@
 name: video_record_segment
 type: workflow
 runtime: python
-description: "录制单个视频段落，包括 CDP 操作序列、浏览器窗口录屏和 TTS 配音生成"
+description: "录制单个视频段落，包括 CDP 操作序列、浏览器窗口录屏和 TTS 配音生成（跨平台）"
 use_cases:
   - "录制演示视频的单个场景"
   - "作为 video_produce_from_script 的子任务"
@@ -13,6 +13,7 @@ tags:
   - recording
   - tts
   - cdp
+  - cross-platform
 output_targets:
   - stdout
   - file
@@ -42,12 +43,13 @@ outputs:
     type: array
     description: "执行的 actions 及其结果"
 dependencies:
-  - video_browser_window_record
+  - obs_video_browser_window_record
+  - macos_video_screen_crop_record
+  - linux_video_screen_crop_record
   - tts_generate_voice
   - video_validate_av_sync
   - video_add_audio_track
-version: "1.0.0"
-system_packages: true  # 依赖 video_browser_window_record 需要系统 dbus
+version: "1.2.0"
 ---
 
 # video_record_segment
@@ -119,7 +121,8 @@ uv run frago recipe run video_record_segment \
 
 - Chrome CDP 已连接 (`uv run frago navigate` 可用)
 - ffmpeg 已安装
-- xdotool 已安装（X11 环境）
+- **macOS**: 需要授权屏幕录制权限
+- **Linux**: xdotool 已安装（X11 环境）
 
 ## 预期输出
 
@@ -181,6 +184,11 @@ uv run frago recipe run video_record_segment \
 
 ## 注意事项
 
+- **录制方式选择**:
+  - **OBS 方案** (`obs_video_browser_window_record`): 推荐，真正的窗口级录制，窗口被遮挡也能正确录制
+  - **ffmpeg crop 方案**: 备选，屏幕区域录制，窗口被遮挡会录到遮挡物
+    - macOS: `macos_video_screen_crop_record`
+    - Linux: `linux_video_screen_crop_record`
 - **录制与操作并行**: 录制在后台线程执行，同时执行 CDP actions
 - **时长控制**: `duration` 字段控制录制时长，actions 应在此时间内完成
 - **同步验证**: 如果音频比视频长，会记录警告但不会阻止执行
@@ -189,4 +197,6 @@ uv run frago recipe run video_record_segment \
 
 | 日期 | 版本 | 变更说明 |
 |------|------|----------|
+| 2025-11-26 | v1.2.0 | 添加 OBS 录制支持，重命名 ffmpeg 方案为 screen_crop |
+| 2025-11-26 | v1.1.0 | 添加跨平台支持，自动选择 macOS/Linux 录屏 Recipe |
 | 2025-11-26 | v1.0.0 | 初始版本 |
