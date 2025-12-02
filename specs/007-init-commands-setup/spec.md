@@ -13,7 +13,7 @@
 
 **Why this priority**: 这是 frago 工具链完整可用的基础。没有 slash 命令，用户无法在 Claude Code 中使用 frago 的 AI 集成功能；没有用户级 recipe 目录，用户无法自定义和持久化自己的 recipe。
 
-**Independent Test**: 可通过在全新环境中执行 `pip install frago && frago init` 验证，检查 `~/.claude/commands/` 下是否存在 frago.* 命令文件，以及 `~/.frago/recipes/` 目录结构是否正确创建。
+**Independent Test**: 可通过在全新环境中执行 `pip install frago-cli && frago init` 验证，检查 `~/.claude/commands/` 下是否存在 frago.* 命令文件，以及 `~/.frago/recipes/` 目录结构是否正确创建。
 
 **Acceptance Scenarios**:
 
@@ -87,7 +87,7 @@
 
 - **SC-001**: 用户执行 `frago init` 后可在 Claude Code 中直接使用 `/frago.run`、`/frago.recipe` 等命令
 - **SC-002**: 用户执行 `frago init` 后 `~/.frago/recipes/` 目录存在且包含至少 3 个示例 recipe
-- **SC-003**: 全新安装用户从 `pip install frago` 到可以使用所有功能的时间不超过 2 分钟
+- **SC-003**: 全新安装用户从 `pip install frago-cli` 到可以使用所有功能的时间不超过 2 分钟
 - **SC-004**: 升级后运行 init 不会导致用户自定义 recipe 丢失
 - **SC-005**: init 命令在权限不足时提供可操作的错误信息，用户可根据提示自行解决问题
 

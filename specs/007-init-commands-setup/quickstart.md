@@ -5,9 +5,9 @@
 ### 1. 安装 frago
 
 ```bash
-pip install frago
+pip install frago-cli
 # 或使用 uv
-uv pip install frago
+uv tool install frago-cli
 ```
 
 ### 2. 初始化环境

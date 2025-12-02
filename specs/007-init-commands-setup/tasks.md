@@ -53,7 +53,7 @@
 
 **Goal**: 用户执行 `frago init` 后，slash 命令和示例 recipe 自动安装到用户目录
 
-**Independent Test**: 在全新环境执行 `pip install frago && frago init`，验证 `~/.claude/commands/frago.*.md` 和 `~/.frago/recipes/` 存在
+**Independent Test**: 在全新环境执行 `pip install frago-cli && frago init`，验证 `~/.claude/commands/frago.*.md` 和 `~/.frago/recipes/` 存在
 
 ### Implementation for User Story 1
 
