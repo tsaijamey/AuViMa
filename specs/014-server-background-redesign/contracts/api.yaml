@@ -1,0 +1,170 @@
+openapi: 3.0.3
+info:
+  title: Frago Web Service API
+  description: |
+    API for Frago Web Service GUI.
+    This document covers the new/modified endpoints for feature 014-server-background-redesign.
+  version: 0.17.0
+
+servers:
+  - url: http://127.0.0.1:8093
+    description: Local development server (fixed port)
+
+paths:
+  /api/dashboard:
+    get:
+      summary: Get dashboard metrics
+      description: |
+        Returns aggregated metrics for the dashboard page including
+        server status, uptime, resource counts, and recent activity.
+      operationId: getDashboardMetrics
+      tags:
+        - dashboard
+      responses:
+        '200':
+          description: Dashboard metrics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardMetrics'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/system/status:
+    get:
+      summary: Get server status
+      description: Returns current server health and uptime information
+      operationId: getServerStatus
+      tags:
+        - system
+      responses:
+        '200':
+          description: Server status retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServerStatus'
+
+components:
+  schemas:
+    DashboardMetrics:
+      type: object
+      required:
+        - server_status
+        - uptime_seconds
+        - stats
+        - recent_activity
+      properties:
+        server_status:
+          type: string
+          enum: [running, degraded, error]
+          description: Current server health status
+          example: running
+        uptime_seconds:
+          type: integer
+          minimum: 0
+          description: Server uptime in seconds
+          example: 3600
+        stats:
+          type: object
+          required:
+            - task_count
+            - recipe_count
+            - skill_count
+          properties:
+            task_count:
+              type: integer
+              minimum: 0
+              description: Total number of tasks
+              example: 10
+            recipe_count:
+              type: integer
+              minimum: 0
+              description: Total number of recipes
+              example: 25
+            skill_count:
+              type: integer
+              minimum: 0
+              description: Total number of skills
+              example: 12
+        recent_activity:
+          type: array
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/RecentActivityItem'
+
+    RecentActivityItem:
+      type: object
+      required:
+        - type
+        - name
+        - timestamp
+      properties:
+        type:
+          type: string
+          enum: [task_created, task_completed, recipe_run]
+          description: Type of activity
+        name:
+          type: string
+          minLength: 1
+          description: Name of the related item
+          example: "Extract YouTube subtitles"
+        timestamp:
+          type: string
+          format: date-time
+          description: When the activity occurred
+          example: "2025-12-23T10:30:00Z"
+        status:
+          type: string
+          enum: [success, failure]
+          description: Result status (optional, for completed activities)
+
+    ServerStatus:
+      type: object
+      required:
+        - status
+        - port
+        - host
+      properties:
+        status:
+          type: string
+          enum: [running, stopped, error]
+          description: Server running state
+        port:
+          type: integer
+          description: Port server is listening on
+          example: 8093
+        host:
+          type: string
+          description: Host server is bound to
+          example: "127.0.0.1"
+        started_at:
+          type: string
+          format: date-time
+          description: When server was started
+        uptime_seconds:
+          type: integer
+          minimum: 0
+          description: Server uptime in seconds
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Error message
+        detail:
+          type: string
+          description: Additional error details
+
+tags:
+  - name: dashboard
+    description: Dashboard metrics and overview
+  - name: system
+    description: System status and health
