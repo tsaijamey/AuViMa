@@ -10,7 +10,7 @@ raising, and so has to be turned into a raise on purpose.
 
 import pytest
 
-from frago.recipes import context
+from frago.recipes import app_state, context
 
 
 class TestOwnerIsTheAbsenceOfAnything:
@@ -289,6 +289,12 @@ class TestAnOwnerRunKnowsWhoseItIs:
         monkeypatch.setenv("FRAGO_IDENTITY_FILE", str(tmp_path / "identity.json"))
         monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
         monkeypatch.setenv("FRAGO_USER_STATE_DIR", str(tmp_path / ".frago" / "users"))
+        # The slot root moves with the rest of this machine. It is a module
+        # attribute rather than something resolved off `Path.home()` per call,
+        # so patching the home alone left one root of the two pointing at the
+        # real one — and "where does this recipe keep its records" is read from
+        # exactly that root.
+        monkeypatch.setattr(app_state, "APP_STATE_DIR", tmp_path / ".frago" / "app-state")
         return tmp_path
 
     def _say_it_moved(self, machine, recipe, slot="default"):
@@ -424,6 +430,12 @@ class TestSharedDataNeedsBothSidesToHaveSaidSomething:
         monkeypatch.setenv("FRAGO_IDENTITY_FILE", str(tmp_path / "identity.json"))
         monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
         monkeypatch.setenv("FRAGO_USER_STATE_DIR", str(tmp_path / ".frago" / "users"))
+        # The slot root moves with the rest of this machine. It is a module
+        # attribute rather than something resolved off `Path.home()` per call,
+        # so patching the home alone left one root of the two pointing at the
+        # real one — and "where does this recipe keep its records" is read from
+        # exactly that root.
+        monkeypatch.setattr(app_state, "APP_STATE_DIR", tmp_path / ".frago" / "app-state")
         return tmp_path
 
     def _registry(self, monkeypatch, *, reads=(), shares=None):

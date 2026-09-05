@@ -41,6 +41,11 @@ def site(tmp_path, monkeypatch):
     monkeypatch.setattr(ident, "USERS_PATH", tmp_path / "users.json")
     monkeypatch.setattr(ident, "SESSIONS_DIR", tmp_path / "login-sessions")
     monkeypatch.setenv("FRAGO_USER_STATE_DIR", str(tmp_path / "users"))
+    # Where this machine's own runs land is computed from its identity record and
+    # that root; both move with the fixture so the page's directory is one this
+    # test can also compute. Nobody tells the server this path.
+    monkeypatch.setenv("FRAGO_IDENTITY_FILE", str(tmp_path / "identity.json"))
+    monkeypatch.setenv("FRAGO_MIGRATION_MANIFEST", str(tmp_path / "manifest.jsonl"))
     for leak in ("FRAGO_USERS_FILE", "FRAGO_SESSIONS_DIR", "FRAGO_SIGNUP_GATE"):
         monkeypatch.delenv(leak, raising=False)
     security.ensure_token()
@@ -76,13 +81,17 @@ def site(tmp_path, monkeypatch):
     monkeypatch.setattr("frago.recipes.registry.get_registry", lambda: _Registry())
     monkeypatch.setattr("frago.recipes.registry.invalidate_registry", lambda: None)
 
-    # What this machine's own run computed, published to the recipe's own slot
-    # in the ordinary way.
-    staged = tmp_path / "staged-output"
-    staged.mkdir()
+    # What this machine's own run computed: files in the landing spot the
+    # platform gave it, and render state in the recipe's own slot. The two are
+    # separate on purpose — the state says nothing about where the files are, and
+    # the page is never told.
+    from frago.recipes.app_state import recipe_data_dir
+    from frago.recipes.context import default_identity
+
+    staged = recipe_data_dir(default_identity(), PAGE)
+    staged.mkdir(parents=True)
     (staged / "plan.json").write_text('{"picks": 7245}', encoding="utf-8")
     app_state.publish(PAGE, {
-        "dataDir": str(staged),
         "secretKey": "never-leaves-the-machine",
         "public": {"asOf": "2026-08-29", "picks": 7245},
     })

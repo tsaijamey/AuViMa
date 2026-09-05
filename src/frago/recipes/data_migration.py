@@ -59,8 +59,19 @@ PLATFORM_KEY = "dataDir"
 
 
 def manifest_path(home: Path | None = None) -> Path:
-    root = (home or Path.home()) / ".frago"
-    return root / MANIFEST_NAME
+    """Where the ledger lives. ``FRAGO_MIGRATION_MANIFEST`` overrides, for tests.
+
+    The override matters more than it used to. This file is now read on the way
+    to answering "where does this recipe keep its data" — which the page route
+    asks on every file request — so a test that moved the state root but not this
+    would be reading the real machine's ledger to decide what a fixture's page
+    serves.
+    """
+    if home is None:
+        override = os.environ.get("FRAGO_MIGRATION_MANIFEST")
+        if override:
+            return Path(override).expanduser()
+    return (home or Path.home()) / ".frago" / MANIFEST_NAME
 
 
 @dataclass(frozen=True)
@@ -608,6 +619,33 @@ def already_migrated(home: Path | None = None) -> set[tuple[str, str]]:
     return done
 
 
+def _slot_state_of(recipe_name: str, slot: str, home: Path | None) -> dict[str, Any]:
+    """One slot's state, read where ``app_state`` actually keeps it.
+
+    ``home`` is for a caller that has moved the whole frago home — the migration
+    commands take one so a test can point them at a fixture tree. Without one
+    this goes through ``app_state.read``, which is the single answer to where a
+    slot lives and the only one that follows the overrides the rest of the system
+    follows. Building the path by hand here instead was a second answer to that
+    question, and it was reached from ``for_owner`` on every run: a test that had
+    moved the state root still had this reading the real one.
+    """
+    if home is None:
+        from frago.recipes.app_state import read as read_slot
+
+        try:
+            return read_slot(recipe_name, slot)
+        except InvalidSlotName:
+            return {}
+
+    path = home / ".frago" / APP_STATE_DIR.name / recipe_name / f"{slot}.json"
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
 def data_left_behind(
     recipe_name: str,
     identity: str,
@@ -635,15 +673,7 @@ def data_left_behind(
     migrates its projects one at a time, and one project still waiting is not a
     reason to refuse the other six.
     """
-    home = home or Path.home()
-    slot_file = home / ".frago" / APP_STATE_DIR.name / recipe_name / f"{slot}.json"
-    try:
-        state = json.loads(slot_file.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(state, dict):
-        return None
-    raw = state.get(PLATFORM_KEY)
+    raw = _slot_state_of(recipe_name, slot, home).get(PLATFORM_KEY)
     if not isinstance(raw, str) or not raw:
         return None
     if (recipe_name, slot) in already_migrated(home):
@@ -815,14 +845,25 @@ def _newest_write(directory: Path) -> tuple[float, Path] | None:
     return newest
 
 
-def _path_claims(home: Path, sources: list[tuple[str, str, str]]) -> list[tuple[str, Path]]:
+def _path_claims(
+    home: Path, sources: list[tuple[str, str, str]], identity: str = ""
+) -> list[tuple[str, Path]]:
     """Every directory anything on this machine claims, and which recipe claims it.
 
-    Both halves are needed. A slot's *own* invented keys count — ``ledgerPath``
-    and friends are how a recipe says "I read this", and a recipe reading inside
-    someone else's migrated source is the thing being looked for. And a ledger
-    source counts, because a directory two migrations both copied is two copies
-    of one thing, which is the original disease.
+    Three halves, and dropping any one of them makes this blind in a direction
+    that matters:
+
+    * **The landing spot the platform gives each recipe.** This is where a
+      recipe's data is now, and it has to be on the list or the whole check goes
+      quiet the moment recipes stop publishing directories of their own — which
+      is exactly what happened when modules were forbidden to hand a page a path.
+      Computed, never read out of a slot: one answer to "where does this recipe's
+      data live", the same one the page and the run get.
+    * **A slot's own invented keys.** ``ledgerPath`` and friends are how a recipe
+      says "I read this", and a recipe reading inside someone else's migrated
+      source is the thing being looked for.
+    * **The ledger's own sources**, because a directory two migrations both
+      copied is two copies of one thing, which is the original disease.
     """
     claims: list[tuple[str, Path]] = []
     root = home / ".frago" / APP_STATE_DIR.name
@@ -830,6 +871,11 @@ def _path_claims(home: Path, sources: list[tuple[str, str, str]]) -> list[tuple[
         for recipe_dir in sorted(root.iterdir()):
             if not recipe_dir.is_dir():
                 continue
+            if identity:
+                with contextlib.suppress(InvalidSlotName):
+                    claims.append(
+                        (recipe_dir.name, recipe_data_dir(identity, recipe_dir.name))
+                    )
             for slot_file in sorted(recipe_dir.glob("*.json")):
                 try:
                     state = json.loads(slot_file.read_text(encoding="utf-8"))
@@ -843,6 +889,9 @@ def _path_claims(home: Path, sources: list[tuple[str, str, str]]) -> list[tuple[
     for recipe, _slot, source in sources:
         if source:
             claims.append((recipe, Path(source)))
+        if identity:
+            with contextlib.suppress(InvalidSlotName):
+                claims.append((recipe, recipe_data_dir(identity, recipe)))
     return claims
 
 
@@ -882,22 +931,27 @@ def _other_claimants(source: Path, recipe: str, claims: list[tuple[str, Path]],
     return sorted(found)
 
 
-def _page_address(recipe: str, slot: str, home: Path) -> str | None:
-    """The directory this recipe's page reads, as its slot records it.
+def _page_address(recipe: str, slot: str, identity: str) -> Path | None:
+    """The directory this recipe's page reads. ``None`` if the layout refuses the name.
 
-    ``None`` covers two different situations that are both fine here: the slot
-    was never published, or it holds no directory at all. Neither one points a
-    reader at the old copy, which is the only failure this check is about.
+    Read out of the slot state until now, back when a recipe published the
+    directory it was working in and the page route served whatever it found
+    there — so a slot still naming the old copy meant people were reading the old
+    copy while the recipe fills the new one.
+
+    Nobody tells a page a directory any more: the route works one out from who is
+    asking, through ``recipe_data_dir`` — the one function that says what the
+    layout is, and the same one ``context.for_owner`` hands a run. So the
+    question has changed shape rather than gone away. What can still be wrong is
+    that a copy landed somewhere no page will ever look, and only the page's own
+    address can say so.
     """
-    slot_file = home / ".frago" / APP_STATE_DIR.name / recipe / f"{slot}.json"
     try:
-        state = json.loads(slot_file.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        return recipe_data_dir(
+            identity, recipe, None if slot == DEFAULT_SLOT_NAME else slot
+        )
+    except InvalidSlotName:
         return None
-    if not isinstance(state, dict):
-        return None
-    recorded = state.get(PLATFORM_KEY)
-    return recorded if isinstance(recorded, str) and recorded else None
 
 
 def audit(identity: str, home: Path | None = None, *, now: datetime | None = None) -> Audit:
@@ -915,9 +969,10 @@ def audit(identity: str, home: Path | None = None, *, now: datetime | None = Non
 
     * Is anything still **writing** to the old copy? Then something never
       switched over, and deleting it loses whatever it wrote.
-    * Is anything still **reading** it? The page's slot is the readable form of
-      that: a slot recording the old directory means people are looking at the
-      old copy while the recipe fills the new one.
+    * Does the page **read what this copy produced**? A page is no longer told a
+      directory by anyone — it is worked out from who is asking — so the failure
+      is no longer "the slot still names the old copy" but "the copy landed
+      somewhere no page will look". See ``_page_address``.
     * Did the source ever belong to this recipe at all? See ``_other_claimants``.
 
     Anything that answers yes to one of those is not finished. Everything else
@@ -939,7 +994,7 @@ def audit(identity: str, home: Path | None = None, *, now: datetime | None = Non
         # has two lines and the newer one describes what is on disk.
         (seals if kind == LIFECYCLE_SEALED else copies)[_unit_key(entry)] = entry
 
-    claims = _path_claims(home, list(copies))
+    claims = _path_claims(home, list(copies), identity)
     for key, entry in copies.items():
         recipe, slot, raw_source = key
         source = Path(raw_source)
@@ -995,19 +1050,11 @@ def audit(identity: str, home: Path | None = None, *, now: datetime | None = Non
                     f"搬完之后老地方还在被写：{last_write} 写了 {newest[1]}（搬于 {when}）。"
                     f"有东西没切过来，这会儿删掉老的就是删掉它写的那些")
 
-        recorded = _page_address(recipe, slot, home)
-        if recorded is not None:
-            try:
-                proper = recipe_data_dir(
-                    identity, recipe, None if slot == DEFAULT_SLOT_NAME else slot)
-            except InvalidSlotName:
-                proper = None
-            if proper is not None and Path(recorded).expanduser() != proper:
-                where = "就是这次搬走的那个老地方" if Path(recorded).expanduser() == source \
-                    else "既不是新落点也不是老源头"
-                reasons.append(
-                    f"页面的地址还记着 {recorded}（{where}），平台算出来的是 {proper}。"
-                    f"页面读一个、配方写另一个，刷新永远成功，数字永远是旧的")
+        served = _page_address(recipe, slot, identity)
+        if served is not None and served != target:
+            reasons.append(
+                f"这一笔搬到了 {target}，但页面读的是 {served}。"
+                f"搬去了没有人读的地方，页面照样空着而且不报错")
 
         shared = _other_claimants(source, recipe, claims, home)
         if shared:

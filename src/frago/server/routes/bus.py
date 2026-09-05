@@ -514,14 +514,17 @@ async def bus_publish(req: PublishRequest, request: Request):
     slot, identity, state = req.slot, False, req.state
     ran_for = context_of_execution(request.headers.get("X-Frago-Execution", ""))
     if ran_for is not None and ran_for.is_visitor and ran_for.slot:
-        # The same three substitutions `app_state.publish` makes for a recipe
-        # that can see its own environment. `dataDir` in particular is replaced
-        # rather than defaulted: a recipe that hard-codes the owner's directory
-        # would otherwise publish that path into a visitor's slot, and
-        # `/app/<name>/data/…` would serve the owner's files to that visitor,
-        # rendering perfectly and silently.
+        # The same substitution `app_state.publish` makes for a recipe that can
+        # see its own environment: whose slot this is, decided here rather than
+        # by the caller.
+        #
+        # It used to stamp `dataDir` over whatever the recipe published, because
+        # `/app/<name>/data/…` read that key — so a recipe hard-coding the
+        # owner's directory would have had the owner's files served to a
+        # visitor, rendering perfectly and silently. That route now works the
+        # directory out from who is asking, so there is no published path left
+        # for anything to point at.
         slot, identity = ran_for.slot, True
-        state = {**req.state, "dataDir": str(ran_for.data_dir)}
 
     try:
         publish(req.recipe, state, slot, identity=identity)

@@ -16,8 +16,13 @@ Three routes make up the contract:
 
     /app/<name>/              the recipe's index.html
     /app/<name>/config.json   synthesized per request, never a file on disk
-    /app/<name>/data/<path>   proxied from the recipe's declared data directory
+    /app/<name>/data/<path>   read out of this requester's landing spot
     /app/<name>/<file>        any other asset, straight from assets/
+
+The data route names a file, never a place. Which directory that file is in is
+worked out per request from who is asking (`_landing_spot`), by the same
+function that tells a run where to write — so a page can be shown a recipe's own
+output without any path ever crossing into the front end.
 
 Front ends keep using relative paths (`fetch('config.json')`, `fetch('data/x.json')`),
 so the page does not know it moved.
@@ -397,67 +402,93 @@ async def serve_app_api(name: str, mode: str, request: Request):
     return {"ok": True, "data": out}
 
 
-@router.get("/{name}/data/{file_path:path}")
-async def serve_app_data(name: str, file_path: str, request: Request):
-    """Serve a file from the recipe's declared data directory, without copying it.
+def _landing_spot(name: str, request: Request) -> Path:
+    """Where this requester's copy of this recipe's data lives.
 
-    The recipe publishes `dataDir` in its slot state; everything under it is
-    readable through this route and nothing outside it is.
+    **Worked out here, never received.** The page says which file it wants, in
+    the recipe's own naming; the server decides where that file is. Until this
+    was so, the directory came from `dataDir` in the slot state — a path the
+    recipe put there — and both halves of that were wrong. It handed a page the
+    layout of the server's disk, and it broke the moment a module built on the
+    base class stopped being allowed to publish a path at all: the recipe could
+    no longer say, and nothing else was saying, so the owner's own page answered
+    404 for every file it was written to show.
+
+    Which copy is the same question the gate has already answered for the write
+    door, asked the same way. A signed-in reader of a per-person page gets their
+    own; the owner, an anonymous reader of a published page and everyone on a
+    shared reading get the machine's own, because all three are looking at what
+    this machine's runs produced.
+
+    There is no branch here for "and check it did not escape somebody else's
+    tree". That check existed because the directory arrived from outside and
+    might be anywhere; a directory computed from the requester is inside their
+    own root by construction. What still holds the line is one containment test,
+    on the file address rather than the directory — see `_resolve_within`.
     """
-    _assets_dir(name)
-    key, state = _slot_state(name, request)
+    from frago.recipes import context
+    from frago.server.security import serves_recipe_slot, slot_for, zone_of
 
-    data_dir = state.get("dataDir")
-    if not data_dir:
+    identity = None
+    if zone_of(request) == "identity" and not serves_recipe_slot(request):
+        identity = slot_for(request)
+        if not identity:
+            # A per-person page whose person the gate did not name. Falling
+            # through to the machine's own copy is the one outcome that must
+            # never happen here: it renders perfectly and it is somebody else's.
+            logger.warning("app data: %s reached the per-person branch with no account", name)
+            raise HTTPException(status_code=404, detail="File not found", headers=_NO_STORE)
+
+    try:
+        spot = context.data_dir_for(name, identity)
+    except (context.NoIdentity, InvalidSlotName, OSError) as err:
+        # Whose run this is cannot be established, so where its data lives cannot
+        # be either. Answering out of any directory at all would be a guess.
+        logger.warning("app data: cannot place %s: %s", name, err)
         raise HTTPException(
             status_code=404,
-            detail=f"Recipe '{name}' (slot '{key}') declares no dataDir",
+            detail=f"Cannot work out where '{name}' keeps its data: {err}",
+            headers=_NO_STORE,
+        ) from err
+
+    if spot is None:
+        # The platform is withholding this recipe's directory because its records
+        # are still under an old path. Serving the new one would show an empty
+        # page while everything the recipe wrote sits elsewhere.
+        raise HTTPException(
+            status_code=404,
+            detail=(f"Recipe '{name}' has records still sitting under an old path, so the "
+                    f"platform has not handed it its directory yet. Run "
+                    f"`frago recipe data-migrate` and try again."),
             headers=_NO_STORE,
         )
+    return spot
 
-    base = Path(data_dir).expanduser()
 
-    # One account's tree is never served to another account.
-    #
-    # A visitor's own run has its `dataDir` forced into `users/<their id>/data/`,
-    # and that forcing rests on every publish path having been covered — the
-    # recipe calling directly, the recipe shelling out to `frago recipe publish`,
-    # a sub-recipe adding another layer. Missing one would raise nothing: the
-    # page would render, out of somebody else's directory.
-    #
-    # The rule is deliberately about the accounts' own root and not "must be
-    # under this account's directory". An identity page whose data the owner
-    # curated — computed ahead of time and published per person, which is what
-    # identity mode was built for — points at a directory under the owner's own
-    # `~/.frago/data/…`, and that is correct and must keep working. What can
-    # never be right is one account's page reading out of another account's
-    # subtree.
-    #
-    # A shared reading is the one deliberate exception, and it has to be spelled
-    # out here rather than fall out of the rule: the recipe's own slot points at
-    # a directory this machine's own runs wrote, filed under `users/<this
-    # machine's id>/recipe-data/…` — inside the accounts root and outside this
-    # reader's subtree, so the check below would refuse exactly the case that
-    # exposure exists to serve. Everything else is unchanged: one account's page
-    # still never reads another account's tree, and the entry saying
-    # `reads: recipe` is the only thing that opens this door.
-    from frago.server.security import serves_recipe_slot, zone_of
+@router.get("/{name}/data/{file_path:path}")
+async def serve_app_data(name: str, file_path: str, request: Request):
+    """Serve a file out of this recipe's landing spot, without copying it.
 
-    if zone_of(request) == "identity" and not serves_recipe_slot(request):
-        from frago.recipes.app_state import user_root, user_state_dir
+    `file_path` is the page naming a file in the recipe's own terms — for a
+    recipe that keeps several bodies of work, `projects/<project>/…`, which is
+    how that layout is spelled on disk and therefore needs no second addressing
+    scheme. Nothing in it is a location: the location is `_landing_spot`'s answer
+    and the page never sees it.
 
-        try:
-            resolved = base.resolve()
-            accounts_root = user_state_dir().resolve()
-            if resolved.is_relative_to(accounts_root) and not resolved.is_relative_to(
-                user_root(key).resolve()
-            ):
-                raise HTTPException(status_code=404, detail="File not found", headers=_NO_STORE)
-        except (InvalidSlotName, OSError) as err:
-            raise HTTPException(status_code=404, detail="File not found", headers=_NO_STORE) from err
+    **The containment test is the gate, not a check.** Whatever the page asks
+    for is resolved under that spot and refused if it lands anywhere else — `..`,
+    an absolute path, a symlink pointing out, or any spelling that decodes to
+    one, because the resolution happens after the kernel has followed every link.
+    """
+    _assets_dir(name)
+    base = _landing_spot(name, request)
 
     if not base.is_dir():
-        raise HTTPException(status_code=404, detail=f"dataDir does not exist: {data_dir}", headers=_NO_STORE)
+        raise HTTPException(
+            status_code=404,
+            detail=f"'{name}' has not written anything yet: {base} does not exist",
+            headers=_NO_STORE,
+        )
 
     full_path = _resolve_within(base, file_path)
     if not full_path.is_file():

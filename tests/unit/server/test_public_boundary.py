@@ -41,6 +41,14 @@ def world(tmp_path, monkeypatch):
     monkeypatch.setattr(pub, "_cache", None, raising=False)
     monkeypatch.setattr(security, "TOKEN_PATH", tmp_path / "server-token")
     monkeypatch.setattr(app_state, "APP_STATE_DIR", tmp_path / "app-state")
+    # The three things the landing spot is computed from. Set here rather than
+    # only in `accounts` because the machine's own spot — what an anonymous
+    # reader of a published page is served — is computed from them too, and the
+    # value has to be the one `accounts` uses or the two fixtures would describe
+    # two different machines.
+    monkeypatch.setenv("FRAGO_USER_STATE_DIR", str(tmp_path / "app-state-users"))
+    monkeypatch.setenv("FRAGO_IDENTITY_FILE", str(tmp_path / "identity.json"))
+    monkeypatch.setenv("FRAGO_MIGRATION_MANIFEST", str(tmp_path / "manifest.jsonl"))
     security.ensure_token()
 
     recipes = tmp_path / "recipes"
@@ -52,8 +60,11 @@ def world(tmp_path, monkeypatch):
         "API_KEY=sk-SECRET-FROM-BORROWED-ASSETS", encoding="utf-8"
     )
 
-    shown = tmp_path / "shown"
-    shown.mkdir()
+    from frago.recipes.app_state import recipe_data_dir
+    from frago.recipes.context import default_identity
+
+    shown = recipe_data_dir(default_identity(), PUBLISHED)
+    shown.mkdir(parents=True)
     (shown / "rows.json").write_text(json.dumps([1, 2, 3]), encoding="utf-8")
 
     outside = tmp_path / "secretzone"
@@ -87,9 +98,9 @@ def world(tmp_path, monkeypatch):
 
     app_state.publish(
         PUBLISHED,
-        {"dataDir": str(shown), "apiKey": "sk-PRIVATE-SLOT-SECRET", "public": {"title": "Q3"}},
+        {"apiKey": "sk-PRIVATE-SLOT-SECRET", "public": {"title": "Q3"}},
     )
-    app_state.publish(PUBLISHED, {"dataDir": str(outside)}, slot="private")
+    app_state.publish(PUBLISHED, {"public": {"title": "internal"}}, slot="private")
     pub.publish(PUBLISHED)
 
     return {"recipes": recipes, "table": table, "make": make, "outside": outside}
@@ -305,16 +316,20 @@ def accounts(world, tmp_path, monkeypatch):
         monkeypatch.delenv(leak, raising=False)
     ident.reset_rate_limits()
 
+    from frago.recipes.app_state import user_data_dir
+
     people = {}
     for who, email in (("zhang", "zhang@example.com"), ("li", "li@example.com")):
         user = ident.create_user(email, PASSWORD)
-        mine = tmp_path / f"data-{who}"
-        mine.mkdir()
+        # Where this account's own runs of this recipe land. Written by the
+        # platform, never named by anyone: the page asks for `rows.json` and the
+        # server decides whose copy that is.
+        mine = user_data_dir(user.id, PUBLISHED)
+        mine.mkdir(parents=True)
         (mine / "rows.json").write_text(json.dumps([who]), encoding="utf-8")
         app_state.publish(
             PUBLISHED,
             {
-                "dataDir": str(mine),
                 "apiKey": f"sk-{who.upper()}-PRIVATE",
                 "public": {"title": who},
             },
@@ -360,6 +375,57 @@ class TestIdentityIsTheSlot:
         assert config["slot"] == accounts["li"]["id"]
         assert config["title"] == "li"
         assert client.get(f"/app/{PUBLISHED}/data/rows.json").json() == ["li"]
+
+    def test_a_signed_in_visitor_never_reaches_the_machines_own_copy(self, accounts):
+        """The file the owner's page shows is on this disk with the same name.
+
+        Both accounts and the machine hold a `rows.json` for this recipe, and the
+        page asks for it by that name and nothing else. Which one comes back is
+        decided by who is asking — so if that decision ever came from somewhere
+        else (a directory the recipe published, a fallback when an account's copy
+        is missing), this is where it would show.
+        """
+        for who in ("zhang", "li"):
+            served = _signed_in(accounts[who]["cookie"]).get(
+                f"/app/{PUBLISHED}/data/rows.json")
+            assert served.json() == [who]
+            assert served.json() != [1, 2, 3]
+
+    def test_an_account_with_no_copy_of_its_own_is_told_so_not_handed_the_machines(
+            self, accounts, tmp_path):
+        """Missing must answer missing. Falling back to the machine's copy would
+        render perfectly for someone who has never run anything, and what they
+        would be reading is the owner's."""
+        from frago.recipes.app_state import user_data_dir
+
+        newcomer = ident.create_user("wang@example.com", PASSWORD)
+        client = _signed_in(ident.create_session(newcomer.id))
+        assert not user_data_dir(newcomer.id, PUBLISHED).exists()
+
+        response = client.get(f"/app/{PUBLISHED}/data/rows.json")
+        assert response.status_code == 404
+        assert "1" not in response.text or response.json() != [1, 2, 3]
+
+    def test_a_recorded_directory_outside_the_account_is_refused_not_honoured(
+            self, accounts, tmp_path):
+        """The one path by which an account's directory is not computed outright.
+
+        A slot written by an older frago can still name where that account's data
+        was put, and the platform honours it — but only inside that account's own
+        root. A value that walked out of it is refused rather than followed, so a
+        hand-edited or inherited slot cannot point one account at anybody else's
+        files.
+        """
+        uid = accounts["zhang"]["id"]
+        escape = tmp_path / "not-mine"
+        escape.mkdir()
+        (escape / "rows.json").write_text(json.dumps(["ESCAPED"]), encoding="utf-8")
+        app_state.publish(PUBLISHED, {"dataDir": str(escape)}, slot=uid, identity=True)
+
+        served = _signed_in(accounts["zhang"]["cookie"]).get(
+            f"/app/{PUBLISHED}/data/rows.json")
+        assert served.json() == ["zhang"]
+        assert "ESCAPED" not in served.text
 
     def test_neither_can_ask_for_the_others_slot(self, accounts):
         """`?key=` is the owner's control. A visitor naming a slot is refused

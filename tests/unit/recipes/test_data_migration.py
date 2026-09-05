@@ -638,20 +638,37 @@ class TestTheCopiesNeedAnEnd:
         assert [x.recipe for x in report.still_live] == [RECIPE]
         assert any("还在被写" in why for why in report.still_live[0].reasons)
 
-    def test_a_page_still_addressing_the_old_directory_is_not(self, home):
-        """The page reads one copy while the recipe fills the other, and every
-        refresh reports success. That is the original failure, exactly."""
+    def test_a_copy_that_landed_where_no_page_reads_is_not(self, home):
+        """The page's directory is worked out from who is asking, so a migration
+        can no longer misdirect it. What it can still do is put the data
+        somewhere no page will ever look — the same silence, from the other end:
+        the recipe fills one directory and the page renders the other, empty,
+        reporting every refresh as a success."""
+        one = self._migrated(home)
+        self._age(one.source / "rows.json", days=40)
+
+        elsewhere = home / ".frago" / "somewhere-else"
+        elsewhere.mkdir(parents=True)
+        # The ledger is append-only and the last line for a (recipe, slot,
+        # source) describes what is on disk, so this is what a hand-run copy to
+        # the wrong place leaves behind.
+        data_migration._record(
+            data_migration.Move(RECIPE, "default", one.source, elsewhere), (1, 12), home)
+
+        report = data_migration.audit(WHO, home)
+        assert [x.recipe for x in report.still_live] == [RECIPE]
+        assert any("页面读的是" in why for why in report.still_live[0].reasons)
+
+    def test_a_slot_still_carrying_the_old_key_no_longer_misleads_anyone(self, home):
+        """`dataDir` used to be the page's address, so a slot still naming the
+        old copy meant people were reading the old copy. Nothing reads that key
+        for an address now — the page's directory is computed from who is
+        asking — so a leftover is a stale record, not a live misdirection, and
+        reporting it as one would send somebody hunting for a fault that is not
+        there."""
         one = self._migrated(home)
         self._age(one.source / "rows.json", days=40)
         _slot(home, RECIPE, "default", {"dataDir": str(one.source)})
-        report = data_migration.audit(WHO, home)
-        assert [x.recipe for x in report.still_live] == [RECIPE]
-        assert any("页面的地址还记着" in why for why in report.still_live[0].reasons)
-
-    def test_a_page_pointed_at_the_proper_place_is_clean(self, home):
-        one = self._migrated(home)
-        self._age(one.source / "rows.json", days=40)
-        _slot(home, RECIPE, "default", {"dataDir": str(one.target)})
         assert data_migration.audit(WHO, home).needs_attention == 0
 
     def test_a_source_that_served_more_than_one_recipe_is_not(self, home):
@@ -668,6 +685,31 @@ class TestTheCopiesNeedAnEnd:
         assert any(x.recipe == RECIPE for x in report.still_live)
         mine = next(x for x in report.still_live if x.recipe == RECIPE)
         assert any("不是只服务这一个配方" in why for why in mine.reasons)
+
+    def test_a_source_inside_another_recipes_landing_spot_is_seen_with_nothing_recording_it(
+            self, home):
+        """Where a recipe's data lives is computed, not written down anywhere.
+
+        So a check that learned who claims what by reading slot state alone
+        would have gone quiet the day modules were forbidden to hand a page a
+        path — silently, and in the one direction that costs data: the next
+        person to seal this copy would have deleted another recipe's records
+        along with it. Here `other_watcher` records nothing at all, and its
+        directory is still recognised as its own.
+        """
+        _slot(home, "other_watcher", "default", {})
+        spot = app_state.recipe_data_dir(WHO, "other_watcher")
+        source = _data(spot, "legacy")
+
+        one = data_migration.plan_from_entries(
+            WHO, [{"recipe": RECIPE, "slot": "default", "source": str(source)}], home
+        ).moves[0]
+        data_migration.apply(one, home)
+        self._age(one.source / "rows.json", days=40)
+
+        report = data_migration.audit(WHO, home)
+        mine = next(x for x in report.still_live if x.recipe == RECIPE)
+        assert any("other_watcher" in why for why in mine.reasons)
 
     def test_the_judgement_is_who_else_is_in_there_not_a_list_of_names(self, home):
         """The blocklist is the gate's job, before the fact, and a list is only

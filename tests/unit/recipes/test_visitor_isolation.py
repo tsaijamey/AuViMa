@@ -53,19 +53,26 @@ class TestTheRecipeDoesNotChooseTheSlot:
 
 
 class TestTheRecipeDoesNotChooseTheDirectory:
-    def test_data_dir_is_replaced_not_filled_in(self, roots, as_visitor):
+    def test_a_path_the_recipe_publishes_decides_nothing(self, roots, as_visitor):
         """The recipe hard-codes the owner's directory — which was the correct
-        thing to write before any of this existed. Publishing it into a
-        visitor's slot would serve the owner's files to that visitor, rendering
-        perfectly and saying nothing."""
-        _, expected = as_visitor
-        path = app_state.publish(
+        thing to write before any of this existed.
+
+        This used to be overwritten on the way in, because the page route read
+        that key to decide which directory to serve, and leaving it would have
+        served the owner's files to a visitor: rendering perfectly, saying
+        nothing. Overwriting was the cure for a route that took its directory
+        from the recipe. The route now works one out from who is asking, so the
+        key is inert wherever it lands — and inert is a stronger property than
+        corrected, because it holds for every door at once rather than for each
+        one somebody remembered to patch.
+        """
+        account, expected = as_visitor
+        app_state.publish(
             "kline",
             {"dataDir": "/Users/owner/.frago/data/stock/recipe-caches/kline"},
             slot="default",
         )
-        written = json.loads(path.read_text(encoding="utf-8"))
-        assert written["dataDir"] == str(expected)
+        assert context.for_visitor("kline", account).data_dir == expected
 
     def test_the_rest_of_the_state_survives(self, roots, as_visitor):
         path = app_state.publish("kline", {"public": {"title": "x"}, "keep": 1})

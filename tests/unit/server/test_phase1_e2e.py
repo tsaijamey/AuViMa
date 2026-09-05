@@ -170,12 +170,25 @@ class TestTheTwoHalvesMeet:
             "a visitor run must not touch the recipe's own slots"
         )
 
-    def test_the_published_state_points_at_the_account_s_own_directory(
+    def test_the_owner_s_path_survives_in_the_slot_and_still_serves_nobody(
         self, deployment, two_people
     ):
+        """The recipe published the owner's absolute directory and it is still
+        sitting there, untouched. That is the point.
+
+        It used to be overwritten on the way in, because the page route read
+        that key to decide which files to serve — one door patched, and every
+        other door that could write a slot had to be found and patched too. The
+        route computes its own directory now, so the key can be as wrong as the
+        recipe likes: what the page serves is the account's own file, and this
+        is the assertion that says the two are unrelated.
+        """
         account = deployment / "users" / two_people["zhang"]["id"]
         written = json.loads((account / "state" / f"{RECIPE}.json").read_text("utf-8"))
-        assert written["dataDir"] == str(account / "data" / RECIPE)
+        assert written["dataDir"] == "/Users/owner/.frago/data/promo/recipe-caches/ledger"
+
+        client = _signed_in(two_people["zhang"]["cookie"])
+        assert client.get(f"/app/{RECIPE}/data/rows.json").json() == ["zhang"]
 
 
 class TestTheGateStillHolds:

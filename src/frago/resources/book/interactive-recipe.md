@@ -91,7 +91,7 @@ def publish_page(state: dict, slot: str = 'default') -> str:
     return r.stdout.strip()          # 页面地址
 ```
 
-状态里放页面自己算不出来的东西：这一轮的数据目录、要显示的文件清单、页面可以调的子配方名。服务端在发出 `config.json` 时会再补上四个字段：
+状态里放页面自己算不出来的东西：要显示的文件清单、页面可以调的子配方名。**NEVER 往里放路径**——基类的 `publish` 会当场拒绝，页面那一侧也没有这台机器的文件系统。服务端在发出 `config.json` 时会再补上四个字段：
 
 | 字段 | 值 |
 |------|-----|
@@ -100,15 +100,20 @@ def publish_page(state: dict, slot: str = 'default') -> str:
 | `appBase` | `/app/<配方名>/` |
 | `slot` | 本次读的槽位名 |
 
-运行期数据不要往 `assets/` 里塞，也不要复制到别处。在状态里声明 `dataDir`，服务端就会把那个目录挂到 `/app/<配方名>/data/` 下按需读：
+运行期数据不要往 `assets/` 里塞，也不要复制到别处：写进平台交代的落点（`self.data_dir`）就行。`/app/<配方名>/data/<文件>` 直接从那里读，**配方不用说、也说不了那个目录在哪**——服务端按请求者自己算出来，主人、登录用户、未登录的人各算各的，读的和写的是同一个判断。
+
+所以状态里只放文件的名字，不放它的位置：
 
 ```python
-publish_page({
-    'dataDir': str(work_dir),
-    'files': [f.name for f in media_files],
+self.publish({
+    'files': [f.name for f in media_files],   # 页面拼 data/<name> 去取
     'generatedAt': stamp,
 })
 ```
+
+数据分项目的配方（一次跑一件互不相干的活），项目就是落点里的一层目录，页面按 `data/projects/<项目名>/<文件>` 取。用的是配方自己的项目名，不是机器上的位置。
+
+以前这里写的是「在状态里声明 `dataDir`」。那条路已经关了：配方交给页面的东西里出现路径，`publish` 直接报错——同一句 `dataDir` 在主人机器上指主人的目录，别人打开页面时会把主人的文件原样送出去，而且页面渲染得好好的、不报任何错。
 
 ### 把页面交给人
 
@@ -258,7 +263,7 @@ inputs 里通常有工作目录之类的入参。outputs 里给 `url`，需要�
 - recipe.md 写了 `uses_frago_cli: true`（脚本要调 `frago recipe publish` / `open`）
 - 前端文件留在配方 `assets/` 里，不复制到任何地方
 - 脚本用 `frago recipe publish` 发布状态，取回地址
-- 运行期数据在状态里声明 `dataDir`，前端走 `data/` 读
+- 运行期数据写进平台交代的落点，状态里只放文件名，前端走 `data/<文件名>` 读
 - 脚本用 `frago recipe open` 打开页面，失败时照样把地址吐给人
 - 页面用相对路径 `fetch('config.json')` 取配置，用 `cfg.apiBase` 拼接接口
 - 页面实现自动保存，常用操作配快捷键

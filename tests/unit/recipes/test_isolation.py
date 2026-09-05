@@ -26,8 +26,26 @@ from frago.recipes import isolation
 
 @pytest.fixture
 def machine(tmp_path, monkeypatch):
-    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-    return tmp_path
+    """A machine whose home is not inside the scratch space runs are granted.
+
+    A run gets the interpreter's scratch — `$TMPDIR`, `/tmp`, `/var/tmp` —
+    because uv writes the environment it builds and python writes its bytecode,
+    and that grant is right. It is also where pytest puts `tmp_path`: on macOS
+    under `$TMPDIR`, on Linux under `/tmp`. So a fixture that made the whole
+    fake home a subdirectory of it described a machine where everything is
+    scratch, and every assertion here about what a run must *not* see was
+    answered by that one unrelated grant rather than by the rule under test.
+
+    Two directories instead of one, side by side and neither inside the other:
+    the machine, and the scratch it hands out.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.setattr("pathlib.Path.home", lambda: home)
+    monkeypatch.setattr(isolation, "_interpreter_writable", lambda: [scratch])
+    return home
 
 
 class TestWhatARunMaySee:
@@ -361,10 +379,23 @@ class TestWhatTheKernelActuallyRefuses:
     """
 
     @pytest.fixture
-    def run(self, tmp_path):
+    def run(self, tmp_path, monkeypatch):
         # Everything sits in its own directory, none of them inside another. A
         # first draft of this fixture put the secret inside the recipe's own
         # directory and the test passed by reading it.
+        #
+        # And none of them inside the interpreter's scratch, which is the same
+        # mistake one level up: a run is granted `$TMPDIR`, `/tmp` and
+        # `/var/tmp` because uv builds environments there and python writes
+        # bytecode there, and `tmp_path` is inside that grant on both platforms.
+        # So "nobody shared this with me" was being answered by a grant that has
+        # nothing to do with sharing, and the kernel was right to allow it.
+        # Pointed at a directory of this test's own instead, so what the kernel
+        # refuses here is refused for the reason this class is about.
+        monkeypatch.setattr(
+            isolation, "_interpreter_writable", lambda: [tmp_path / "scratch"]
+        )
+        (tmp_path / "scratch").mkdir()
         secret = tmp_path / "secret"
         secret.mkdir()
         (secret / "key").write_text("private")

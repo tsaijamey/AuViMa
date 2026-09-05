@@ -552,6 +552,31 @@ def for_visitor(recipe_name: str, identity: str) -> InvocationContext:
     )
 
 
+def data_dir_for(recipe_name: str, identity: str | None = None) -> Path | None:
+    """Where this recipe's data for this requester lives. One answer, both verbs.
+
+    A run asks where to write; a page's file request asks where to read. Those
+    have to be the same directory, and until this existed only the write side had
+    an answer worked out here — a read took whatever path the recipe had put in
+    its slot state. That is what broke the owner's own page: a module built on the
+    base class may not hand the page a path at all, so it published none, and the
+    read door had nothing left to read.
+
+    ``identity`` is the account this is for, or None for the machine's own. None
+    covers three callers that look different and are not: the owner, an anonymous
+    reader of a published page, and everyone on a shared reading. All three are
+    looking at what this machine's own runs produced, which is one directory.
+
+    Returns None when the platform will not name a spot for this recipe yet —
+    its records are still sitting under an old path (``data_left_behind``).
+    Handing back the new directory anyway would serve an empty one while
+    everything the recipe ever wrote is somewhere else, which is the silence this
+    whole layout exists to remove.
+    """
+    ctx = for_visitor(recipe_name, identity) if identity else for_owner(recipe_name)
+    return ctx.data_dir
+
+
 def is_visitor(env: Mapping[str, str] | None = None) -> bool:
     """Whether this process is running on someone else's behalf."""
     return current(env).is_visitor

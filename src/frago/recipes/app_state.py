@@ -298,15 +298,19 @@ def publish(
     Written to a temporary file and moved into place so a page reloading at the
     wrong moment never sees a half-written file.
 
-    On a visitor run the recipe does not get a say in three of these arguments.
-    That is not the same as filling in a default when the recipe passed nothing:
-    a default means "the recipe wins if it passes something", which hands the
-    key back to the very code the isolation is meant to survive. `dataDir` in
-    particular must be replaced rather than filled in — a recipe that hard-codes
-    the owner's directory (most of them do; it was the correct thing to write
-    before this existed) would otherwise publish that path into a visitor's
-    slot, and `/app/<name>/data/…` would then serve the owner's files to that
-    visitor, rendering perfectly and silently.
+    On a visitor run the recipe does not get a say in which slot it writes. That
+    is not the same as filling in a default when the recipe passed nothing: a
+    default means "the recipe wins if it passes something", which hands the key
+    back to the very code the isolation is meant to survive.
+
+    It used to overwrite `dataDir` here as well, because `/app/<name>/data/…`
+    read that key to decide which directory to serve — so a recipe that
+    hard-coded the owner's directory (most of them did; it was the correct thing
+    to write before any of this existed) would otherwise have served the owner's
+    files to a visitor, rendering perfectly and silently. That route no longer
+    reads the key: it works the directory out from who is asking. With nothing
+    reading a published path, there is nothing left to overwrite, and the two
+    branches this door used to have are one.
 
     Owner-only on disk. Slot state is where a recipe parks the absolute paths it
     is working with, and often a key or an internal identifier alongside them —
@@ -321,7 +325,6 @@ def publish(
     if ctx.is_visitor:
         slot = ctx.slot or ""
         identity = True
-        state = {**state, "dataDir": str(ctx.data_dir)}
 
     path = slot_path(recipe_name, slot, identity=identity)
     path.parent.mkdir(parents=True, exist_ok=True)

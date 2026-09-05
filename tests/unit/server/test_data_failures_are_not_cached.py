@@ -24,17 +24,28 @@ def test_no_store_is_declared():
     assert app_pages._NO_STORE == {"Cache-Control": "no-store"}
 
 
+#: Everything a request for a page's data can be refused by. Both, because the
+#: route delegates: working out which directory this requester reads is its own
+#: function, and three of the four ways this can fail now live there. A version
+#: of this test that looked only at the route would have gone on passing while
+#: most of what it guards moved out from under it.
+_THE_DATA_CHANNEL = (app_pages.serve_app_data, app_pages._landing_spot)
+
+
 def test_every_failure_on_the_data_route_is_uncacheable():
     """Any 404 raised while serving a page's data must say not to keep it."""
-    source = inspect.getsource(app_pages.serve_app_data)
+    for where in _THE_DATA_CHANNEL:
+        source = inspect.getsource(where)
 
-    raises = [line for line in source.splitlines() if "HTTPException" in line]
-    assert raises, "the data route no longer raises; this test needs rewriting"
+        raises = [line for line in source.splitlines() if "HTTPException" in line]
+        assert raises, f"{where.__name__} no longer raises; this test needs rewriting"
 
-    # Each raise either carries the header inline or opens a call that does.
-    blocks = source.split("raise HTTPException")[1:]
-    missing = [b.split(")")[0] for b in blocks if "_NO_STORE" not in b.split("raise ")[0]]
-    assert not missing, f"these failures could be cached by the browser: {missing}"
+        # Each raise either carries the header inline or opens a call that does.
+        blocks = source.split("raise HTTPException")[1:]
+        missing = [b.split(")")[0] for b in blocks if "_NO_STORE" not in b.split("raise ")[0]]
+        assert not missing, (
+            f"these failures in {where.__name__} could be cached by the browser: {missing}"
+        )
 
 
 def test_success_still_revalidates_rather_than_never_caching():

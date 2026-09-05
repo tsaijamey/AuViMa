@@ -322,32 +322,37 @@ class TestTheRunIsForThatPersonOnly:
         account = world["root"] / "users" / world["people"]["zhang"]["id"]
         assert Path(ran["ctx"].data_dir).is_relative_to(account)
 
-    def test_the_slot_is_written_before_the_recipe_starts(self, world, ran):
-        """Otherwise the page polls a directory that does not exist yet: the
-        slot declares no dataDir, and `/app/<n>/data/…` answers 404."""
+    def test_the_directory_is_made_before_the_recipe_starts(self, world, ran):
+        """The page polls `data/run.json` from the moment it presses the button,
+        so the directory and a terminal state have to be there first — otherwise
+        the very first press reads a directory that does not exist yet."""
         _post(world["people"]["zhang"]["cookie"])
-        account = world["root"] / "users" / world["people"]["zhang"]["id"]
-        assert (account / "state" / f"{PAGE}.json").is_file()
+        data_dir = Path(ran["ctx"].data_dir)
+        assert data_dir.is_dir()
+        assert (data_dir / "run.json").is_file()
 
 
 class TestTheRunDoesNotEmptyThePageOnItsWayIn:
     """Starting a run must not cost the visitor what they were already reading.
 
-    The write that happens before the recipe starts exists only to guarantee a
-    data directory. Publishing just that directory replaced the slot wholesale,
-    so the page went blank the moment a run began — and a run that fails never
-    writes anything back, leaving the visitor with nothing and no explanation.
-    Seen on the live server 2026-08-23: a visitor's run failed at 21:23 and the
-    page stayed empty until the state was restored by hand a minute later.
+    The write that used to happen before the recipe started existed only to put
+    a data directory into the slot, because that is where the page route read
+    one from. Publishing just that directory replaced the slot wholesale, so the
+    page went blank the moment a run began — and a run that fails never writes
+    anything back, leaving the visitor with nothing and no explanation. Seen on
+    the live server 2026-08-23: a visitor's run failed at 21:23 and the page
+    stayed empty until the state was restored by hand a minute later.
+
+    The fix then was to carry the old values forward around the injection. The
+    route works its own directory out from who is asking now, so there is
+    nothing to inject and nothing to carry: starting a run does not touch the
+    slot at all, and the failure has no way left to happen.
     """
 
     def _already_showing(self, world):
         app_state.publish(
             PAGE,
-            {
-                "dataDir": "/somewhere/stale",
-                "public": {"tradeCount": 45, "generatedAt": "2026-08-23T21:24:43"},
-            },
+            {"public": {"tradeCount": 45, "generatedAt": "2026-08-23T21:24:43"}},
             slot=world["people"]["zhang"]["id"],
             identity=True,
         )
@@ -365,19 +370,21 @@ class TestTheRunDoesNotEmptyThePageOnItsWayIn:
             "generatedAt": "2026-08-23T21:24:43",
         }
 
-    def test_the_data_directory_is_still_forced_to_this_account(self, world, ran):
-        """Carrying the old values forward must not carry the old directory:
-        that is the one key the platform decides and the recipe may not."""
+    def test_starting_a_run_writes_nothing_into_the_slot(self, world, ran):
+        """The slot is what the page renders. A run touching it on the way in is
+        how a press emptied the page; not touching it is why that cannot recur."""
         self._already_showing(world)
+        before = self._slot_now(world)
         _post(world["people"]["zhang"]["cookie"])
-        account = world["root"] / "users" / world["people"]["zhang"]["id"]
-        assert Path(self._slot_now(world)["dataDir"]).is_relative_to(account)
+        assert self._slot_now(world) == before
 
-    def test_a_first_ever_run_still_gets_a_directory(self, world, ran):
-        """Nothing to carry forward is the ordinary case on someone's first run,
-        and it must still leave a usable slot behind."""
+    def test_a_first_ever_run_needs_no_slot_at_all(self, world, ran):
+        """Nothing to carry forward is the ordinary case on someone's first
+        press. The page reads its progress out of `data/run.json`, which the run
+        writes, so an unwritten slot costs it nothing."""
         _post(world["people"]["zhang"]["cookie"])
-        assert self._slot_now(world)["dataDir"]
+        assert self._slot_now(world) == {}
+        assert (Path(ran["ctx"].data_dir) / "run.json").is_file()
 
 
 class TestTheResponseSaysAlmostNothing:

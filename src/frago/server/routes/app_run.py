@@ -301,7 +301,7 @@ async def run_for_visitor(name: str, request: Request):
     mode; the exposure decides only who is looking. The two now narrow
     independently, and neither can widen the other.
     """
-    from frago.recipes import app_state, context
+    from frago.recipes import context
     from frago.recipes.contract import page_actions_of
     from frago.recipes.publish import allows, published_entry
     from frago.server.security import is_owner_request, serves_recipe_slot, slot_for, zone_of
@@ -385,29 +385,17 @@ async def run_for_visitor(name: str, request: Request):
             status_code=409, detail="you already have a run going; wait for it to finish"
         )
 
-    # Written before the recipe starts, so the page has something to read on the
-    # very first run. Without it `/app/<name>/data/…` answers 404 — the slot
-    # declares no dataDir until something publishes one — and the page would poll
-    # a directory that does not exist yet.
+    # The directory is made and marked running before the recipe starts, so the
+    # page polling `data/run.json` has a terminal state to read from the very
+    # first press rather than a directory that does not exist yet.
     #
-    # Everything already in the slot is carried forward. Publishing only the
-    # directory would replace the slot wholesale, and that is what turned a
-    # failed run into a blank page: the run emptied the page on its way in, and
-    # a run that fails never writes anything back, so the visitor was left
-    # looking at nothing with no indication that anything had been lost.
-    # Observed on the live server 2026-08-23: a visitor's run failed at 21:23
-    # and the page they had been reading went empty until the state was restored
-    # by hand a minute later. A run that succeeds replaces this state anyway, so
-    # carrying the old values forward costs the successful case nothing.
+    # This used to stamp the directory into the visitor's slot as well, because
+    # `/app/<name>/data/…` read it from there and answered 404 until something
+    # published one. That route now works the directory out from who is asking —
+    # the same answer this line already has in `data_dir` — so writing it into
+    # the slot would be recording a path nothing reads, in the one document a
+    # page is handed.
     try:
-        carried = dict(app_state.read(name, identity, identity=True))
-        carried["dataDir"] = str(data_dir)
-        app_state.publish(
-            name,
-            carried,
-            slot=identity,
-            identity=True,
-        )
         _write_run_state(data_dir, state="running", started=_now(), error=None)
     except Exception:
         _release(key)

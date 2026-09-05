@@ -58,6 +58,28 @@ def state_dir(tmp_path, monkeypatch):
 
 
 @pytest.fixture
+def landing(tmp_path, monkeypatch):
+    """The directory the platform gives this recipe on this machine.
+
+    Both halves of that answer move together: the account tree the layout hangs
+    off, and this machine's record of whose runs these are. A fixture that moved
+    only one would be describing a machine that cannot exist — and the point of
+    these tests is that nobody *tells* the server this directory, so a test that
+    could not compute the same one would be testing nothing.
+    """
+    monkeypatch.setenv("FRAGO_USER_STATE_DIR", str(tmp_path / "users"))
+    monkeypatch.setenv("FRAGO_IDENTITY_FILE", str(tmp_path / "identity.json"))
+    monkeypatch.setenv("FRAGO_MIGRATION_MANIFEST", str(tmp_path / "manifest.jsonl"))
+
+    from frago.recipes.app_state import recipe_data_dir
+    from frago.recipes.context import default_identity
+
+    spot = recipe_data_dir(default_identity(), RECIPE)
+    spot.mkdir(parents=True)
+    return spot
+
+
+@pytest.fixture
 def client(recipe_dir, state_dir):
     from frago.server.app import create_app
 
@@ -287,51 +309,131 @@ class TestConfig:
 
 
 class TestDataProxy:
-    def test_serves_from_the_declared_directory_without_copying(self, client, tmp_path):
-        data = tmp_path / "board-data"
-        data.mkdir()
-        (data / "records.json").write_text('{"rows": 3}', encoding="utf-8")
-        app_state.publish(RECIPE, {"dataDir": str(data)})
+    """The owner reading their own recipe's output through their own page.
+
+    Nothing here publishes a directory, because a module built on the base class
+    cannot: it may not put a path in what it hands its page. The route works out
+    where to read from who is asking, which is the same answer a run gets when it
+    is told where to write — and until it did, this whole class of page was
+    broken for the one person actually using the tool. Its files were sitting on
+    disk and every request for one came back 404.
+    """
+
+    def test_serves_from_the_landing_spot_without_being_told_where_it_is(
+            self, client, landing):
+        (landing / "records.json").write_text('{"rows": 3}', encoding="utf-8")
+        app_state.publish(RECIPE, {"title": "no path in here"})
 
         response = client.get(f"/app/{RECIPE}/data/records.json")
         assert response.status_code == 200
         assert response.json() == {"rows": 3}
 
-    def test_each_slot_reads_its_own_directory(self, client, tmp_path):
-        for slot, rows in (("default", 1), ("b", 2)):
-            directory = tmp_path / f"data-{slot}"
-            directory.mkdir()
-            (directory / "n.json").write_text(json.dumps({"rows": rows}), encoding="utf-8")
-            app_state.publish(RECIPE, {"dataDir": str(directory)}, slot=slot)
+    def test_a_recipe_that_holds_several_projects_addresses_one_by_name(
+            self, client, landing):
+        """A page that keeps several bodies of work names the project the way the
+        layout spells it — `projects/<name>/…` — which is the recipe's own naming
+        and not a location. There is no second addressing scheme for this, and
+        no query parameter: the project is part of *which file*, and it goes
+        through the same containment test as every other file address.
+        """
+        for project, rows in (("alpha", 1), ("beta", 2)):
+            where = landing / "projects" / project
+            where.mkdir(parents=True)
+            (where / "n.json").write_text(json.dumps({"rows": rows}), encoding="utf-8")
+
+        assert client.get(
+            f"/app/{RECIPE}/data/projects/alpha/n.json").json()["rows"] == 1
+        assert client.get(
+            f"/app/{RECIPE}/data/projects/beta/n.json").json()["rows"] == 2
+
+    def test_the_page_state_slot_no_longer_chooses_a_directory(self, client, landing):
+        """`?key=` picks which state a page renders. It used to pick a data
+        directory too, because each slot published one — two things behind one
+        name. The recipe's data has one landing spot per person; a body of work
+        inside it is addressed as a project, above."""
+        (landing / "n.json").write_text(json.dumps({"rows": 1}), encoding="utf-8")
+        app_state.publish(RECIPE, {"title": "A"})
+        app_state.publish(RECIPE, {"title": "B"}, slot="b")
 
         assert client.get(f"/app/{RECIPE}/data/n.json").json()["rows"] == 1
-        assert client.get(f"/app/{RECIPE}/data/n.json?key=b").json()["rows"] == 2
+        assert client.get(f"/app/{RECIPE}/data/n.json?key=b").json()["rows"] == 1
 
-    def test_recipe_that_declares_no_directory_says_so(self, client):
-        app_state.publish(RECIPE, {"title": "no data here"})
+    def test_a_recipe_that_has_never_written_anything_says_so(self, client, landing):
+        landing.rmdir()
         response = client.get(f"/app/{RECIPE}/data/anything.json")
         assert response.status_code == 404
-        assert "dataDir" in response.json()["detail"]
+        assert str(landing) in response.json()["detail"]
 
-    def test_missing_directory_is_reported_not_crashed(self, client, tmp_path):
-        app_state.publish(RECIPE, {"dataDir": str(tmp_path / "gone")})
+    def test_a_missing_file_in_a_real_directory_is_just_missing(self, client, landing):
         assert client.get(f"/app/{RECIPE}/data/x.json").status_code == 404
+
+    def test_records_still_under_an_old_path_are_refused_rather_than_shown_empty(
+            self, client, landing, tmp_path):
+        """The platform withholds a recipe's directory while its records sit
+        somewhere else, so a run cannot start fresh without saying so. The read
+        door has to answer the same way: serving the new, empty directory would
+        render a page of nothing while everything the recipe wrote is elsewhere,
+        which is the exact silence this layout exists to remove."""
+        old = tmp_path / "old-home"
+        old.mkdir()
+        app_state.publish(RECIPE, {"dataDir": str(old)})
+
+        response = client.get(f"/app/{RECIPE}/data/anything.json")
+        assert response.status_code == 404
+        assert "data-migrate" in response.json()["detail"]
 
 
 class TestBoundaries:
-    def test_data_route_refuses_to_climb_out(self, client, tmp_path):
-        """A page must not be able to read the disk through its own data route."""
-        data = tmp_path / "board-data"
-        data.mkdir()
-        app_state.publish(RECIPE, {"dataDir": str(data)})
+    """The file address is the only thing the page controls, so it is the gate.
 
-        secret = tmp_path / "secret.txt"
-        secret.write_text("private", encoding="utf-8")
+    Whatever a page asks for is resolved under the landing spot and refused if it
+    comes out anywhere else. These are the four spellings of "anywhere else", and
+    each is a separate mechanism rather than four ways of writing one: dot
+    segments are text, an absolute path changes how the join works, a symlink is
+    resolved by the kernel, and percent-encoding is undone before the route ever
+    sees the path.
+    """
 
+    @pytest.fixture
+    def secret(self, tmp_path):
+        outside = tmp_path / "secret.txt"
+        outside.write_text("private", encoding="utf-8")
+        return outside
+
+    def test_climbing_out_with_dots_is_refused(self, client, landing, secret):
         response = client.get(
             f"/app/{RECIPE}/data/{Path('..') / 'secret.txt'}", follow_redirects=False
         )
         assert response.status_code in (307, 403, 404)
+        assert "private" not in response.text
+
+    def test_a_percent_encoded_climb_is_refused(self, client, landing, secret):
+        for spelling in ("..%2Fsecret.txt", "%2e%2e/secret.txt", "%2e%2e%2fsecret.txt"):
+            response = client.get(f"/app/{RECIPE}/data/{spelling}", follow_redirects=False)
+            assert "private" not in response.text, spelling
+
+    def test_an_absolute_path_is_refused(self, client, landing, secret):
+        response = client.get(f"/app/{RECIPE}/data/{secret}", follow_redirects=False)
+        assert "private" not in response.text
+
+    def test_a_symlink_pointing_out_is_refused(self, client, landing, tmp_path):
+        """Resolved after the kernel has followed the link, because a rule about
+        a link is a rule about nothing — the link is not what gets opened."""
+        outside = tmp_path / "elsewhere"
+        outside.mkdir()
+        (outside / "creds.txt").write_text("SECRET-OUTSIDE", encoding="utf-8")
+        (landing / "way-out").symlink_to(outside)
+
+        response = client.get(f"/app/{RECIPE}/data/way-out/creds.txt")
+        assert response.status_code in (403, 404)
+        assert "SECRET-OUTSIDE" not in response.text
+
+    def test_a_project_name_cannot_be_bent_into_a_climb(self, client, landing, secret):
+        """The project is part of the file address, so it goes through the same
+        test as the rest of it rather than being trusted for being a name."""
+        response = client.get(
+            f"/app/{RECIPE}/data/projects/../../secret.txt", follow_redirects=False
+        )
         assert "private" not in response.text
 
     def test_resolver_blocks_escapes_directly(self, tmp_path):
@@ -443,20 +545,18 @@ class TestAnonymousVisitor:
         assert config["apiBase"] == "/api"
         assert config["readOnly"] is False
 
-    def test_visitor_can_read_the_data_the_page_exists_to_show(self, visitor, tmp_path):
-        data_dir = tmp_path / "data"
-        data_dir.mkdir()
-        (data_dir / "rows.json").write_text(json.dumps([1, 2, 3]), encoding="utf-8")
-        self._publish_state(data_dir)
+    def test_visitor_can_read_the_data_the_page_exists_to_show(
+            self, visitor, landing, tmp_path):
+        (landing / "rows.json").write_text(json.dumps([1, 2, 3]), encoding="utf-8")
+        self._publish_state(tmp_path / "data")
         response = visitor.get(f"/app/{RECIPE}/data/rows.json")
         assert response.status_code == 200
         assert response.json() == [1, 2, 3]
 
-    def test_visitor_cannot_climb_out_of_the_data_directory(self, visitor, tmp_path):
-        data_dir = tmp_path / "data"
-        data_dir.mkdir()
+    def test_visitor_cannot_climb_out_of_the_data_directory(
+            self, visitor, landing, tmp_path):
         (tmp_path / "secret.txt").write_text("private", encoding="utf-8")
-        self._publish_state(data_dir)
+        self._publish_state(tmp_path / "data")
         assert visitor.get(f"/app/{RECIPE}/data/../secret.txt").status_code in (403, 404)
 
     def test_visitor_cannot_reach_the_api_through_the_published_recipe(self, visitor):
@@ -541,13 +641,16 @@ class TestVisitorErrorMessages:
         pub.publish(RECIPE)
         return TestClient(create_app(), follow_redirects=False, client=("93.184.216.34", 41234))
 
-    def test_a_missing_data_directory_does_not_name_itself(self, visitor, tmp_path):
-        secret_path = tmp_path / "clients" / "acme" / "20260817-q3"
-        app_state.publish(RECIPE, {"dataDir": str(secret_path), "public": {}})
+    def test_a_directory_that_does_not_exist_yet_does_not_name_itself(
+            self, visitor, landing):
+        """The landing spot is under this account's id and inside this machine's
+        frago home, so naming it in a refusal describes both."""
+        landing.rmdir()
+        app_state.publish(RECIPE, {"public": {}})
         response = visitor.get(f"/app/{RECIPE}/data/rows.json")
         assert response.status_code == 404
-        assert "acme" not in response.text
-        assert str(tmp_path) not in response.text
+        assert str(landing) not in response.text
+        assert "recipe-data" not in response.text
 
     def test_a_slot_without_a_data_directory_does_not_name_the_slot(self, visitor):
         app_state.publish(RECIPE, {"public": {}})
@@ -555,21 +658,20 @@ class TestVisitorErrorMessages:
         assert response.status_code == 404
         assert "dataDir" not in response.text
 
-    def test_a_missing_file_says_only_that(self, visitor, tmp_path):
-        data_dir = tmp_path / "data"
-        data_dir.mkdir()
-        app_state.publish(RECIPE, {"dataDir": str(data_dir), "public": {}})
+    def test_a_missing_file_says_only_that(self, visitor, landing):
+        app_state.publish(RECIPE, {"public": {}})
         response = visitor.get(f"/app/{RECIPE}/data/nope.json")
         assert response.status_code == 404
-        assert str(data_dir) not in response.text
+        assert str(landing) not in response.text
 
-    def test_the_owner_still_gets_a_useful_diagnosis(self, client, tmp_path, visitor):
-        """Scrubbing is for visitors; debugging a page on your own machine needs the reason."""
-        missing = tmp_path / "gone"
-        app_state.publish(RECIPE, {"dataDir": str(missing)})
+    def test_the_owner_still_gets_a_useful_diagnosis(self, client, landing, visitor):
+        """Scrubbing is for visitors; debugging a page on your own machine needs
+        the reason, and here the reason is which directory came up empty."""
+        landing.rmdir()
+        app_state.publish(RECIPE, {})
         response = client.get(f"/app/{RECIPE}/data/rows.json")
         assert response.status_code == 404
-        assert str(missing) in response.text
+        assert str(landing) in response.text
 
 
 class TestWhatThePageMayDo:

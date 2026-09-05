@@ -2565,11 +2565,15 @@ def share_recipe(name: str, yes: bool, output_format: str):
 def _dangerous_data_dir(base: Path) -> str | None:
     """Why this directory must not be published, or None if it is fine.
 
-    Publishing serves everything under `dataDir`, so a slot pointing at a
-    directory that also holds other things hands those over too. The audit of
-    20260817 pointed one at `~/.frago` and read the real `config.json` through
-    the published page. A recipe writing its own output directory is the normal
-    case and passes; the places worth refusing outright are few and nameable.
+    Publishing serves everything under the recipe's landing spot, so a spot that
+    also holds other things hands those over too. The audit of 20260817 pointed
+    one at `~/.frago` and read the real `config.json` through the published page.
+
+    The platform now computes that spot rather than taking it from the recipe, so
+    it can no longer be one of these by any route a recipe controls. Kept anyway:
+    this is the sentence that says which directories must never be served, and a
+    rule that only holds because of how something else currently computes a value
+    is a rule with nowhere to be read.
     """
     resolved = base.expanduser().resolve()
     home = Path.home().resolve()
@@ -2594,6 +2598,28 @@ def _dangerous_data_dir(base: Path) -> str | None:
             f"directory instead."
         )
     return None
+
+
+def _served_directory(name: str) -> Path | None:
+    """The directory `/app/<name>/data/…` actually serves, or None if there is none.
+
+    Asked of the platform rather than read out of the slot state. Those were the
+    same answer for as long as a recipe published its own directory into that
+    state; they stopped being the same when modules were forbidden to hand a page
+    a path, and this audit went on describing a key nothing writes any more —
+    reporting "this slot declares no dataDir, so nothing is served" about a page
+    that serves a hundred files. Which directory a reader gets is one question,
+    and `context.data_dir_for` is where it is answered.
+    """
+    from frago.recipes import context
+
+    try:
+        return context.data_dir_for(name)
+    except Exception:
+        # A machine that cannot say whose runs these are, or a name the layout
+        # refuses. Either way this audit has nothing to describe, and saying so
+        # is better than guessing at a directory.
+        return None
 
 
 def _borrowed_ui_owner(name: str) -> str | None:
@@ -2661,17 +2687,22 @@ def _publish_audit(name: str, slot: str, *, require_identity: bool = False) -> t
             'state["public"] — everything else in the slot stays private.'
         )
 
-    data_dir = state.get("dataDir")
-    if data_dir:
-        base = Path(str(data_dir)).expanduser()
+    base = _served_directory(name)
+    if base is None:
+        notes.append(
+            f"平台还没把落点交给 '{name}'——它的记录还在老路径下，或者这台机器说不出"
+            f"这些运行归谁。在那之前 /app/{name}/data/… 什么也不给。"
+            f"先跑 frago recipe data-migrate 看一眼。"
+        )
+    else:
         refusal = _dangerous_data_dir(base)
         if refusal:
             raise click.ClickException(refusal)
         resolved = base.resolve()
         if base.is_symlink() or resolved != base:
             notes.append(
-                f"dataDir {base} resolves to {resolved} — that is the directory "
-                f"that becomes public, not the path as written."
+                f"{base} resolves to {resolved} — that is the directory that "
+                f"becomes readable, not the path as written."
             )
         if base.is_dir():
             files = [p for p in base.rglob("*") if p.is_file()]
@@ -2680,9 +2711,17 @@ def _publish_audit(name: str, slot: str, *, require_identity: bool = False) -> t
                 f"({len(files)} file(s) right now)."
             )
         else:
-            notes.append(f"dataDir {base} does not exist yet; nothing is served from it.")
-    else:
-        notes.append(f"This slot declares no dataDir, so /app/{name}/data/… serves nothing.")
+            notes.append(f"{base} does not exist yet; nothing is served from it.")
+
+    if require_identity:
+        # The directory described above is the one this machine's own runs write.
+        # Under `--each-their-own` no reader is served it: each of them is served
+        # their own, which is empty until they press something.
+        notes.append(
+            f"上面那个目录是本机自己的那一份。这次是「各人读各人那份」，"
+            f"名单上的人读的是 ~/.frago/users/<账号id>/data/{name}/，"
+            f"跟上面那个目录物理分开，第一次打开时是空的。"
+        )
 
     return state, notes
 
@@ -2848,9 +2887,9 @@ def expose_recipe(name: str, slot: str | None, want_public: bool, want_signed_in
     """Decide who may open this recipe's page, and whose data they see.
 
     Exposing shows exactly three things and nothing else: the recipe's assets/,
-    the `public` block of the slot being served, and the files under that slot's
-    dataDir. The API that page would otherwise call — which can run recipes and
-    read any path on this machine — stays closed.
+    the `public` block of the slot being served, and the files in the landing
+    spot the platform gives this recipe. The API that page would otherwise call —
+    which can run recipes and read any path on this machine — stays closed.
 
     \b
     WHO MAY OPEN IT — one of these, and the first exposure must say which:

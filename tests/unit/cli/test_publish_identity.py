@@ -88,15 +88,24 @@ class TestInsideAVisitorRunTheFlagsStopMattering:
         assert (roots / "users" / ACCOUNT / "state" / "ledger.json").is_file()
         assert not (roots / "users" / "ffff0000ffff").exists()
 
-    def test_the_owner_s_directory_is_replaced_in_what_gets_written(self, roots):
+    def test_a_directory_the_recipe_names_here_decides_nothing(self, roots):
+        """Recipes reach this command by shelling out, so it is the door that
+        never went through the base class and never had its paths refused.
+
+        It used to overwrite the owner's directory with the visitor's, because
+        the page route read that key to pick which files to serve. The route
+        works its own directory out from who is asking now, so whatever lands in
+        the slot here decides nothing — which is what has to be true of *this*
+        door in particular, being the one nothing else guards.
+        """
         _publish(
             ["ledger", "--slot", "default"],
             {"dataDir": "/Users/owner/.frago/data/promo/recipe-caches/ledger"},
         )
-        written = json.loads(
-            (roots / "users" / ACCOUNT / "state" / "ledger.json").read_text("utf-8")
+        assert (
+            context.for_visitor("ledger", ACCOUNT).data_dir
+            == roots / "users" / ACCOUNT / "data" / "ledger"
         )
-        assert written["dataDir"] == str(roots / "users" / ACCOUNT / "data" / "ledger")
 
     def test_the_url_it_prints_carries_no_account_id(self, roots):
         result = _publish(["ledger", "--slot", "default"], {})

@@ -87,17 +87,21 @@ class TestARunStartedForSomebodyWritesTheirPage:
             "project": "20260827-a-film", "title": "the owner's"
         }
 
-    def test_the_data_directory_is_the_platform_s_answer_not_the_recipe_s(
+    def test_a_directory_the_recipe_publishes_here_decides_nothing(
         self, client, visitor_run, roots
     ):
         """A recipe that hard-codes the owner's directory — the correct thing to
-        write before any of this existed — must not put that path where
-        `/app/<name>/data/…` will serve it to a visitor."""
+        write before any of this existed — must not end up deciding which files
+        `/app/<name>/data/…` serves a visitor.
+
+        This hub used to stamp the visitor's directory over it, because that
+        route read the key. It works its own out from who is asking now, so the
+        published path is inert: it is not what the platform answers with.
+        """
+        from frago.recipes import context
+
         _publish(client, {"dataDir": "/Users/owner/.frago/data/films"}, EXECUTION)
-        written = json.loads(
-            (roots / "users" / ACCOUNT / "state" / f"{RECIPE}.json").read_text("utf-8")
-        )
-        assert written["dataDir"] == str(visitor_run)
+        assert context.for_visitor(RECIPE, ACCOUNT).data_dir == visitor_run
 
     def test_the_address_handed_back_names_no_slot(self, client, visitor_run):
         """A visitor's slot is their account id and the access gate decides it;
