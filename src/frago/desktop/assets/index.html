@@ -65,6 +65,16 @@
       </div>
     </div>
 
+    <!-- 视频播放器。刻意没有标题栏、没有红黄绿：它演的是"一块正在放片子的屏"，
+         不是一个 macOS 应用窗口。所以它的装饰高度是 0，内容区就是整扇窗口。
+         载体是页面自己的 <video>，不经过演员浏览器的 jpeg 帧流——那条路会把
+         每一帧重编码一次，而这扇窗口存在的理由就是把片子原样放出来。 -->
+    <div class="stage-window win-video" id="win-video" data-win="video" hidden>
+      <div class="win-body video-body">
+        <video id="video-view" playsinline muted preload="auto"></video>
+      </div>
+    </div>
+
     <div class="stage-window" id="win-browser" data-win="browser">
       <div class="titlebar">
         <div class="traffic"><span class="tl red"></span><span class="tl yellow"></span><span class="tl green"></span></div>
@@ -145,9 +155,47 @@
         </div>
         <span class="dock-dot"></span>
       </div>
+      <div class="dock-item" id="dock-video">
+        <div class="dock-icon icon-video">
+          <svg viewBox="0 0 40 40" width="25" height="25" aria-hidden="true">
+            <defs>
+              <linearGradient id="playGloss" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#fff" stop-opacity=".30"/>
+                <stop offset=".55" stop-color="#fff" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <rect x="5.5" y="8.5" width="29" height="23" rx="4"
+                  fill="none" stroke="#fff" stroke-width="2"/>
+            <path d="M17 15.5 L26 20 L17 24.5 Z" fill="#fff"/>
+            <rect x="5.5" y="8.5" width="29" height="23" rx="4"
+                  fill="url(#playGloss)"/>
+          </svg>
+        </div>
+        <span class="dock-dot"></span>
+      </div>
+    </div>
+
+    <!-- 全屏 HTML 展示层。铺满整块桌面，压住窗口、dock 与菜单栏——它不是
+         "一个没有边框的浏览器窗口"，是把整块屏交给一份 HTML，像放幻灯。
+         内容由 broker 的 /slide 路由发出来，在这张页面里原生渲染：机位拍的
+         就是这张页面，所以动画走的是 1920×1080 的原生像素，不经过任何一次
+         jpeg 重编码。演员浏览器那条路做不到这件事。
+
+         压在它上面的只有三样：字幕、贴纸栏、虚拟鼠标。三样都是"讲解"，
+         而讲解本来就该盖在画面之上。 -->
+    <div id="slide-layer" hidden>
+      <iframe id="slide-frame" title="slide" scrolling="no"
+              referrerpolicy="no-referrer"></iframe>
     </div>
 
     <div id="caption"></div>
+
+    <!-- 贴纸栏：电视节目下三分之一那条说明字条。
+         与 #caption 分层，不共用：字幕是一句句流过去的话，各自计时、说完就走；
+         贴纸栏是挂在那儿的一条说明，讲这一段的全程都在。合成一层的话，
+         字幕到期清场会顺手把还该挂着的说明一起撤掉。
+         位置在字幕之上：广播画面里也是字条在上、字幕在下。 -->
+    <div id="strap-layer" hidden></div>
 
     <!-- 浮层标注层。和 #caption 各走各的：字幕讲话、浮层指画面，
          两者常常同时在场，共用容器会让一方的清理误伤另一方。 -->

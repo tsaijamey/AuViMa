@@ -380,10 +380,11 @@ def parse(tokens: list[str]) -> tuple[str, object]:
                   allowed=["open", "close", "min", "max", "restore", "move"])
 
     if res == "focus":
-        win, rest = one_positional(rest, "窗口（term / browser / image）")
+        win, rest = one_positional(
+            rest, "窗口（" + " / ".join(WINDOWS) + "）")
         take_flags(rest, set())
-        if win not in ("term", "browser", "image"):
-            raise die(f"未知窗口: {win}", allowed=["term", "browser", "image"])
+        if win not in WINDOWS:
+            raise die(f"未知窗口: {win}", allowed=list(WINDOWS))
         return "steps", [{"op": "focus", "win": win}]
 
     if res == "term":
@@ -451,6 +452,65 @@ def parse(tokens: list[str]) -> tuple[str, object]:
                 use_instead="window close --target image",
             )
         raise die(f"未知 image 动词: {verb}", allowed=["open"])
+
+    if res == "slide":
+        # 全屏 HTML 展示层。**不是一扇没有边框的浏览器窗口**：虚拟浏览器窗口
+        # 画的是演员那台无头浏览器的 jpeg 帧流，一段动画要经过编码、传输、
+        # 解码、贴 canvas 四道；slide 把 HTML 直接挂在被录的那张桌面页里，
+        # 动画走的是原生像素。所以"展示自己做的动画"用这条，
+        # "看一个真实网页"用 browser open。
+        verb, rest = one_positional(rest, "slide 的动词（open / close）")
+        if verb == "open":
+            path, rest = one_positional(rest, "HTML 路径")
+            f = take_flags(rest, {"ms"})
+            return "steps", [{"op": "slide.open", "path": path,
+                              "ms": as_int(f, "ms", 280)}]
+        if verb == "close":
+            f = take_flags(rest, {"ms"})
+            return "steps", [{"op": "slide.close", "ms": as_int(f, "ms", 280)}]
+        raise die(f"未知 slide 动词: {verb}", allowed=["open", "close"])
+
+    if res == "video":
+        verb, rest = one_positional(
+            rest, "video 的动词（open / play / pause / seek）")
+        if verb == "open":
+            # 装一部片子进来，顺带把播放器打开——同 image open，
+            # "打开一份文件顺带拉起对应程序"。关它走 window close --target video。
+            # 装载即暂停在第一帧：分镜要的是"到这一拍才开始放"。
+            path, rest = one_positional(rest, "视频路径")
+            take_flags(rest, set())
+            return "steps", [{"op": "video.open", "path": path}]
+        if verb in ("play", "pause"):
+            take_flags(rest, set())
+            return "steps", [{"op": "video.act", "action": verb}]
+        if verb == "seek":
+            f = take_flags(rest, {"sec"})
+            if "sec" not in f:
+                raise die("video seek 需要 --sec <秒>")
+            return "steps", [{"op": "video.act", "action": "seek",
+                              "sec": as_float(f, "sec")}]
+        raise die(f"未知 video 动词: {verb}",
+                  allowed=["open", "play", "pause", "seek"])
+
+    if res == "strap":
+        # 贴纸栏：电视节目下方那条说明字条。与 say 分开是因为生命周期不同——
+        # 字幕说完就走，字条挂着直到 hide。
+        verb, rest = one_positional(rest, "strap 的动词（show / hide）")
+        if verb == "show":
+            text, rest = one_positional(rest, "要显示的文字")
+            f = take_flags(rest, {"title", "style", "at", "ms"})
+            step: dict = {"op": "strap.show", "text": text,
+                          "style": f.get("style", "news"),
+                          "at": f.get("at", "bottom")}
+            if "title" in f:
+                step["title"] = f["title"]
+            if "ms" in f:
+                step["ms"] = as_int(f, "ms")
+            return "steps", [step]
+        if verb == "hide":
+            take_flags(rest, set())
+            return "steps", [{"op": "strap.hide"}]
+        raise die(f"未知 strap 动词: {verb}", allowed=["show", "hide"])
 
     if res == "browser":
         verb, rest = one_positional(rest, "browser 的动词")
@@ -617,15 +677,52 @@ def parse(tokens: list[str]) -> tuple[str, object]:
 
 def need_target(f: dict) -> str:
     if "target" not in f:
-        raise die("需要 --target term|browser|image")
-    if f["target"] not in ("term", "browser", "image"):
-        raise die(f"--target 只支持 term|browser|image，得到: {f['target']}")
+        raise die("需要 --target " + "|".join(WINDOWS))
+    if f["target"] not in WINDOWS:
+        raise die(f"--target 只支持 {'|'.join(WINDOWS)}，得到: {f['target']}",
+                  allowed=list(WINDOWS))
     return f["target"]
 
 
+# 桌面上的四个程序。**只有这一份名单**，写死在各处的三元/四元名单是漂移的
+# 温床：漏改一处的表现是某个动词认得 video、另一个不认，而错误消息读起来
+# 像是这个程序不存在。
+WINDOWS = ("term", "browser", "image", "video")
+
 RESOURCES = {"up", "down", "status", "elements", "mouse", "window", "focus",
-             "term", "image", "browser", "tab", "camera", "viewport", "wait",
-             "pause", "rec", "say"}
+             "term", "image", "video", "slide", "strap", "browser", "tab",
+             "camera", "viewport", "wait", "pause", "rec", "say"}
+
+#: 裸跑 `frago desktop` 时，每个资源一句话。
+#:
+#: 为什么值得有：裸跑的回执从前只有一串资源名，而 slide / strap / video 这类
+#: 名字光看字认不出它管什么——agent 于是要么去翻源码，要么挑一个"看起来像"
+#: 的动词试。一行字的成本换掉的是那一整轮试探。
+RESOURCE_HELP = {
+    "up": "拉起虚拟桌面（身份已存在则复用，桌面页自行重连）",
+    "down": "停掉它。意图会被记住，守护不会把它拉回来",
+    "status": "舞台在不在跑、画面活不活、几块荧幕连着——任何指令之前先问这句",
+    "elements": "现在能寻址的东西有哪些（桌面级全量 / 页面内按需）",
+    "mouse": "虚拟鼠标：to <ref> 移到某元素、drift 闲晃、click 点当前位置",
+    "window": "开关程序与摆窗口：open|close / min|max|restore / move",
+    "focus": "把某个程序置前台（关着就顺手打开）",
+    "term": "虚拟终端：run 执行、read 读缓冲区、scroll 回看、fontsize 改字号",
+    "image": "图片浏览器：open <本地图片>，关它走 window close --target image",
+    "video": "视频播放器（简洁边框，无标题栏）：open <片子> / play / pause / "
+             "seek --sec",
+    "slide": "全屏 HTML 展示层：open <html> 铺满整块桌面盖住所有窗口，close 撤掉。"
+             "自己做的动画走这条，看真实网页走 browser",
+    "strap": "贴纸栏（电视节目那条说明字条）：show <文字> --style news|bar|"
+             "ghost|chip，hide 撤掉。挂着不走，与 say 的字幕分层",
+    "browser": "虚拟浏览器窗口：open <url> / click / scroll / read",
+    "tab": "浏览器标签：open / switch <n> / close <n>",
+    "camera": "摄像机（不是窗口）：up / down / focus --ref / pan --to / reset",
+    "viewport": "refresh：重读演员视口并按新比例重摆虚拟浏览器窗口",
+    "wait": "语义等待：--for <ref> | --url <模式> | --text <文字>",
+    "pause": "纯演示节拍 --ms，与语义等待分开的动词",
+    "rec": "录制：start --name <n> / stop（回执带冻帧指标与 2×3 宫格）",
+    "say": "旁白字幕，一句句流过去，各自计时",
+}
 
 
 # ── 客户端侧组合（broker 协议不动） ──
@@ -943,6 +1040,11 @@ def main(argv: list[str] | None = None) -> int:
     if not argv or argv[0] in ("-h", "--help"):
         print(json.dumps({"ok": False, "error": "需要指令",
                           "resources": sorted(RESOURCES),
+                          # 每个资源一句话。resources 那串名字保持原样不动
+                          # （现有调用方读的是它），说明另起一个键。
+                          "what": {k: RESOURCE_HELP[k]
+                                   for k in sorted(RESOURCES)
+                                   if k in RESOURCE_HELP},
                           "batch": "aos - 从标准输入按行读"},
                          ensure_ascii=False))
         return 2

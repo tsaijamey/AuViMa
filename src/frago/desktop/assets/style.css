@@ -270,6 +270,45 @@ html, body {
   object-fit: contain;
 }
 
+/* ── video player ──
+   简洁边框：没有标题栏、没有红黄绿、没有播放控件。理由是这扇窗口演的不是
+   一个 macOS 应用，是"一块正在放片子的屏"——标题栏和红绿灯会把观众的注意力
+   引到窗口装饰上，而这一镜要看的是片子本身。装饰高度因此是 0，
+   contentRect 就是整扇窗口（app.js 的 winHeaderH 对 video 返回 0）。
+
+   描边比别的窗口细一档、圆角小一档：边框存在的唯一目的是把片子从桌布上
+   划出来，粗了就变成一个相框。控件也一并不画——播放、暂停、跳转全部由指令
+   驱动，画一排点不动的按钮只会让观众以为那是可以点的。 */
+.win-video {
+  border-radius: 6px;
+  background: #000;
+  box-shadow:
+    0 18px 48px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+.win-video.focused {
+  box-shadow:
+    0 26px 66px rgba(0, 0, 0, 0.66),
+    0 0 0 1px rgba(232, 163, 61, 0.34);
+}
+.video-body {
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+#video-view {
+  width: 100%;
+  height: 100%;
+  /* contain 而不是 cover：窗口几何本来就是按片子的宽高比算的，两者同比，
+     contain 不会留边；万一探不到真实尺寸而退回 16:9，contain 留一点黑边，
+     cover 则会把画面裁掉一截——留边看得出来，裁掉看不出来。 */
+  object-fit: contain;
+  display: block;
+  background: #000;
+}
+
 /* fake browser chrome */
 .browser-chrome {
   flex: none;
@@ -462,6 +501,10 @@ html, body {
   background: linear-gradient(160deg, #4a7d52 0%, #2f5f3a 55%, #22492e 100%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
+.icon-video {
+  background: linear-gradient(160deg, #6b4a8f 0%, #4b3070 55%, #382458 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
 .dock-dot {
   position: absolute;
   left: 50%;
@@ -478,6 +521,38 @@ html, body {
    前台那个再亮一档，两种状态各有各的形态，不必去数窗口。 */
 .dock-item.running .dock-dot { opacity: 0.42; }
 .dock-item.active .dock-dot { opacity: 1; }
+
+/* ── 全屏 HTML 展示层 ──────────────────────────────────────
+   铺满整块桌面。z-index 600 压在窗口(100/200)、菜单栏与 dock(500) 之上，
+   在字幕(800)、扫描灯(900)、浮层(1200)、贴纸栏(1300)、鼠标(2000) 之下。
+
+   这个层次不是随手排的：全屏展示要盖掉的是**桌面**（窗口、程序坞、菜单栏），
+   而字幕和贴纸栏是讲解，讲解本来就该压在画面上——一段满屏动画配一条说明字条
+   正是这套东西存在的理由。扫描灯留在上面同理：它是取景保障（canvas 逐帧重画
+   把帧率钉住），被盖住就等于录制时帧率掉回三四帧。
+
+   背景铺黑：HTML 自己不一定有背景色，透出下面的桌面窗口就穿帮了。 */
+#slide-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 600;
+  background: #000;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.28s ease;
+}
+#slide-layer.in { opacity: 1; }
+/* 与 .stage-window[hidden] 同一条理由：作者样式恒压过 UA 样式表里那条
+   [hidden]{display:none}，不写这句，hidden 属性形同虚设。 */
+#slide-layer[hidden] { display: none; }
+#slide-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: #000;
+}
 
 /* ── caption ── */
 /* 字幕贴着 dock 上沿走，和所有影片一样。原先吊在画面 30% 高处，
@@ -595,6 +670,109 @@ html, body {
 }
 .overlay-enter-slide { transform: translateX(-60%); }
 .overlay-enter-slide.in { transform: translateX(0); }
+
+/* ── 贴纸栏（下三分之一字条） ─────────────────────────────
+   电视新闻画面下方那条说明条。z-index 1300：压在浮层(1200) 之上、涟漪与
+   鼠标之下——它是**挂着的说明**，讲这一段的全程都在，所以不该被任何一次
+   一闪而过的图示盖住；而鼠标必须在最上面，观众全靠它判断操作发生在哪。
+
+   位置在字幕(#caption, bottom:72px) 之上而不是同一处：广播画面里也是字条
+   在上、字幕在下，两者同时在场是常态。默认下沿距底 132px，正好让出字幕那条。
+
+   四种样式是预定义的，不开放自由 CSS：这条东西的用途是"少量说明文字"，
+   开放样式等于把排版决定推给调用方，而每次现调的结果就是每一镜长得不一样。 */
+#strap-layer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 1300;
+  display: flex;
+  padding: 0 64px;
+  pointer-events: none;
+}
+#strap-layer[hidden] { display: none; }
+#strap-layer.at-bottom { bottom: 132px; }
+/* 顶部形态贴着菜单栏下沿走，不压住它——菜单栏是场景交代，盖掉它画面就
+   不像一台电脑了。 */
+#strap-layer.at-top { top: 44px; }
+
+.strap {
+  display: flex;
+  align-items: stretch;
+  max-width: 82%;
+  min-height: 62px;
+  border-radius: 4px;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateX(-30px);
+  transition: opacity 0.32s ease, transform 0.34s cubic-bezier(.4, 0, .2, 1);
+}
+.strap.in { opacity: 1; transform: none; }
+.strap-title {
+  display: flex;
+  align-items: center;
+  flex: none;
+  padding: 0 22px;
+  font-size: 23px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  white-space: nowrap;
+}
+.strap-text {
+  display: flex;
+  align-items: center;
+  padding: 12px 28px;
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.28;
+}
+
+/* news：标签格 + 正文条。图里那种，标签是一整格实色，不是一条描边。
+   两格等高并排，中间没有缝——缝会让它看起来像两个不相干的东西。 */
+.strap-news .strap-title { background: #c8102e; color: #fff; }
+.strap-news .strap-text {
+  background: rgba(12, 16, 24, 0.92);
+  color: #f2f4f8;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+}
+.strap-news { box-shadow: 0 12px 34px rgba(0, 0, 0, 0.45); }
+
+/* bar：一整条实色，标签作为前缀长在同一块里。要的是"一句话横在画面上"，
+   没有分栏。 */
+.strap-bar {
+  background: rgba(12, 16, 24, 0.94);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.45),
+              inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.strap-bar .strap-title { color: #e8a33d; padding-right: 0; }
+.strap-bar .strap-text { color: #f2f4f8; }
+
+/* ghost：毛玻璃，画面从底下透出来。给"不想抢戏的注解"用——底下正放着
+   要看的东西时，实色条会把画面切成两半。 */
+.strap-ghost {
+  background: rgba(16, 20, 30, 0.42);
+  backdrop-filter: blur(22px) saturate(140%);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+}
+.strap-ghost .strap-title { color: #e8a33d; padding-right: 0; }
+.strap-ghost .strap-text { color: #fff; }
+
+/* chip：短胶囊，只放一句短语。字比别的档小一号——它本来就不是主角。 */
+.strap-chip {
+  min-height: 46px;
+  border-radius: 999px;
+  background: rgba(232, 163, 61, 0.95);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+}
+.strap-chip .strap-title { color: #2a1a06; padding-right: 0; font-size: 19px; }
+.strap-chip .strap-text {
+  color: #16100a;
+  font-size: 23px;
+  font-weight: 700;
+  padding: 8px 24px;
+}
 
 /* ── virtual cursor ── */
 #vcursor {

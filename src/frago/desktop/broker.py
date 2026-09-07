@@ -15,6 +15,7 @@ import asyncio
 import base64
 import io
 import json
+import mimetypes
 import os
 import re
 import shutil
@@ -31,8 +32,8 @@ from typing import Any
 
 import uvicorn
 import websockets
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, Response
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, JSONResponse, Response
 from PIL import Image
 
 from . import (
@@ -2020,10 +2021,10 @@ class Stage:
     # 那时没有窗口能接收键盘输入，op_type / op_key 会明说而不是往空处送。
     focus: str | None = "term"
     # 每个程序在不在桌面上。这是"关掉"这件事的唯一真值，与最小化无关：
-    # 收起的程序还在跑（dock 亮着灯），关掉的程序不在了。图片浏览器开机不在
-    # 桌面上——它是被 image open 叫起来的。
+    # 收起的程序还在跑（dock 亮着灯），关掉的程序不在了。图片浏览器与播放器
+    # 开机不在桌面上——它们是被 image open / video open 叫起来的。
     open: dict = field(default_factory=lambda: {"term": True, "browser": True,
-                                                "image": False})
+                                                "image": False, "video": False})
     clients: set = field(default_factory=set)
     # 最近一次的画面与地址栏状态。纯事件驱动没有快照，新连上的客户端会
     # 错过此前所有消息，桌面一片空白——而 UI 断线是会自动重连的，
@@ -2035,6 +2036,18 @@ class Stage:
     # 图片浏览器窗口当前开的图。也要留档并补发：断线重连的客户端如果收不到这条，
     # 会把一扇没有内容的空窗口当成实时画面。
     last_image: dict | None = None
+    # 播放器窗口当前装的那部片子，外加 broker 自己记的播放意图
+    # （playing / pos / pos_at）。留档的理由比图片那条更硬：**录制机位是每次
+    # rec start 现开的一页**，它拿到的是补发的快照。只补"装了哪部片子"而不补
+    # 播放位置，机位就从第一帧开始放，而人那块荧幕上片子已经放到一半——
+    # 成片和当时看到的不是同一个东西，且回执一路正常。
+    last_video: dict | None = None
+    # 全屏 HTML 展示层现状。同样必须留档补发：不补的话机位拍到的是桌面窗口，
+    # 而人看到的是满屏动画。
+    last_slide: dict | None = None
+    # 贴纸栏现状。它不像字幕那样到点自己走，讲这一段的全程都挂着，
+    # 所以后连上的荧幕必须补一份，否则成片里那条说明整段缺席。
+    last_strap: dict | None = None
     # 演员标签的存活状态。也要留档并补发：断线重连的客户端如果收不到这条，
     # 会把上一帧当成实时画面，而那正是这条消息要消灭的误会。
     last_actor: dict | None = None
@@ -2150,7 +2163,8 @@ class Stage:
         照样能答，只是没有谁享有前台优先。
         """
         order = list(dict.fromkeys(
-            ([self.focus] if self.focus else []) + ["browser", "image", "term"]
+            ([self.focus] if self.focus else [])
+            + ["browser", "image", "video", "term"]
         ))
         for win in order:
             r = self.content_rect(win)
@@ -2768,18 +2782,25 @@ def build_app(cfg: dict) -> FastAPI:
     # 宽上限 60%——浏览器窗口已经占了 75–85%，图片窗口再大就和它打架。
     # 高按宽的比例推出来，与浏览器窗口同一套思路：等比、不拉伸、不留白。
     IMAGE_W_MAX_FRAC = 0.60
+    # 播放器可以比图片窗口大一档：一部片子是这一镜的主体，而截图往往是配图。
+    # 仍然压在浏览器窗口的 75–85% 之下，免得两者在桌面上互相抢。
+    VIDEO_W_MAX_FRAC = 0.66
 
-    def image_geometry(img_w: int, img_h: int) -> dict:
-        """按图片长宽比算出图片浏览器窗口该有的几何。
+    def content_geometry(cw: int, ch: int, max_w_frac: float,
+                         header: int) -> dict:
+        """按内容长宽比算出一扇"跟着内容走"的窗口该有的几何。
 
-        返回窗口框 frame（含标题栏）与内容区 content，以及被夹在哪里的说明。
+        图片浏览器与播放器共用这一份。两者的算法本来就是同一个：没有演员视口
+        可跟随，内容自己的比例就是窗口的比例，宽按可用区的一个上限取，
+        高由比例推出，装不下就反过来由高定宽。各写一份的代价不是重复，
+        是漂移——一边改了取整方式另一边不跟，画面上是几像素的黑边，
+        而没有任何一层会报错。
         """
         notes: list[str] = []
         area = desktop_area()
-        header = 30  # 图片窗口只有一条标题栏，无地址栏
-        max_w = int(area["w"] * IMAGE_W_MAX_FRAC) & ~1
+        max_w = int(area["w"] * max_w_frac) & ~1
         max_h = int(area["h"]) - WIN_PAD * 2 - header
-        ratio = (img_w / img_h) if img_h else 16 / 9
+        ratio = (cw / ch) if ch else 16 / 9
         w = max_w
         h = w / ratio
         if h > max_h:
@@ -2801,22 +2822,40 @@ def build_app(cfg: dict) -> FastAPI:
             "frame": {"x": x, "y": y, "w": w, "h": frame_h},
             "content": {"x": x, "y": y + header, "w": w, "h": h},
             "aspect_ratio": round(ratio, 4),
-            "image_size": {"w": img_w, "h": img_h},
             "height_limited": height_limited,
             "desktop_area": area, "header_h": header,
             "notes": notes,
         }
 
-    async def push_image_window(geo: dict, ms: int = 0) -> dict:
-        """把图片窗口几何下发给虚拟桌面页。
+    def image_geometry(img_w: int, img_h: int) -> dict:
+        """按图片长宽比算出图片浏览器窗口该有的几何。
 
-        图片窗口与浏览器窗口不同：它没有演员视口要跟随，开图后位置尺寸由人
-        （window move）决定，几何的作者是 UI——这里只下发"按图片比例算好的
+        返回窗口框 frame（含标题栏）与内容区 content，以及被夹在哪里的说明。
+        """
+        # 图片窗口只有一条标题栏，无地址栏
+        return {**content_geometry(img_w, img_h, IMAGE_W_MAX_FRAC, header=30),
+                "image_size": {"w": img_w, "h": img_h}}
+
+    def video_geometry(vid_w: int, vid_h: int) -> dict:
+        """按片子长宽比算出播放器窗口该有的几何。
+
+        header 恒为 0：播放器没有标题栏（见 style.css 的 .win-video），
+        窗口框就是内容区。这个 0 不是"忘了留位置"——简洁边框是这扇窗口的设计，
+        标题栏会把观众的注意力从片子引到窗口装饰上。
+        """
+        return {**content_geometry(vid_w, vid_h, VIDEO_W_MAX_FRAC, header=0),
+                "video_size": {"w": vid_w, "h": vid_h}}
+
+    async def push_content_window(win: str, geo: dict, ms: int = 0) -> dict:
+        """把跟着内容走的那扇窗口的几何下发给虚拟桌面页。
+
+        它们与浏览器窗口不同：没有演员视口要跟随，装载内容之后位置尺寸由人
+        （window move）决定，几何的作者是 UI——这里只下发"按内容比例算好的
         初始几何"，之后的增改走通用 win 消息，不做 broker 侧对账。
         """
         f = geo["frame"]
-        msg = {"t": "win", "win": "image", "ms": ms, **f}
-        stage.win_geom["image"] = {**msg}
+        msg = {"t": "win", "win": win, "ms": ms, **f}
+        stage.win_geom[win] = {**msg}
         await broadcast(msg)
         return geo
 
@@ -3013,7 +3052,7 @@ def build_app(cfg: dict) -> FastAPI:
         replay = [
             {"t": "win", "win": w, "ms": 0, **{k: r[k] for k in "xywh"}}
             for w, r in ((w, stage.elements.get("win:" + w))
-                         for w in ("term", "browser", "image"))
+                         for w in WINDOWS)
             if r
         ] or [{**g, "ms": 0} for g in stage.win_geom.values()]
         # 谁开着谁关着必须补发，且排在几何之前。桌面页刚加载时是"终端和浏览器
@@ -3023,7 +3062,7 @@ def build_app(cfg: dict) -> FastAPI:
         power_state = [
             {"t": "win", "win": w, "ms": 0,
              "action": "open" if stage.open.get(w) else "close"}
-            for w in ("term", "browser", "image")
+            for w in WINDOWS
         ]
         snapshot: list[dict] = [
             *power_state,
@@ -3040,6 +3079,35 @@ def build_app(cfg: dict) -> FastAPI:
             snapshot.append({**stage.last_chrome, "t": "chrome"})
         if stage.last_image is not None:
             snapshot.append({"t": "image", **stage.last_image})
+        if stage.last_video is not None:
+            # 片子本身、放到哪儿了、在不在放，三样缺一不可。只补第一样的话，
+            # 新连上的荧幕（机位每次 rec start 都是现开的一页）从片头开始放，
+            # 而人那块荧幕上片子早过半——成片和当时看到的不是同一个东西，
+            # 而三层回执一路正常。
+            snapshot.append({"t": "video",
+                             "url": stage.last_video["url"],
+                             "name": stage.last_video["name"]})
+            snapshot.append({"t": "video.act", "action": "seek",
+                             "sec": video_position()})
+            if stage.last_video.get("playing"):
+                snapshot.append({"t": "video.act", "action": "play"})
+        if stage.last_slide is not None:
+            # ms=0：补发是对齐现状，不是给新客户端演一遍淡入。
+            snapshot.append({"t": "slide", "url": stage.last_slide["url"],
+                             "name": stage.last_slide["name"], "ms": 0})
+        if stage.last_strap is not None:
+            # 带 ms 的字条到点会自己撤。补一份早该消失的说明比不补更坏，
+            # 所以过期的就地清掉——broker 这边没有定时器，到期判定就在这里。
+            strap = {k: v for k, v in stage.last_strap.items() if k != "at_ts"}
+            life = strap.get("ms")
+            age = time.time() - float(stage.last_strap["at_ts"])
+            if life is not None and age * 1000 >= life:
+                stage.last_strap = None
+            else:
+                if life is not None:
+                    # 只补剩下的那段寿命，别让它在新荧幕上重新活满一轮。
+                    strap["ms"] = max(1, int(life - age * 1000))
+                snapshot.append({"t": "strap", **strap})
         term_snapshot = term.snapshot()
         if term_snapshot is not None:
             # 补发整段缓冲区，不是最后一屏：新连上的荧幕（机位就是这种，
@@ -3385,11 +3453,19 @@ def build_app(cfg: dict) -> FastAPI:
         return _diff_term(before, term.plain_lines())
 
     async def settle_layout(seq_before: int, timeout_ms: int) -> bool:
-        """等 UI 把新几何报回来。窗口动作的效果由 UI 计算，它报到才算落定。"""
+        """等 UI 把新几何报回来。窗口动作的效果由 UI 计算，它报到才算落定。
+
+        一个荧幕都没连着时立刻认账，不空等满窗口：报 layout 的只有荧幕，
+        没有荧幕就没有人会报，等下去等的是一件确定不会发生的事。代价是每条
+        窗口动作白白慢掉几百毫秒到几秒——一串窗口指令下来就是十几秒，
+        而回执里那个 layout_reported 无论等不等都是 false。
+        """
         deadline = time.time() + timeout_ms / 1000
         while time.time() < deadline:
             if stage.layout_seq != seq_before:
                 return True
+            if not stage.clients:
+                return False
             await asyncio.sleep(0.04)
         return False
 
@@ -3484,6 +3560,9 @@ def build_app(cfg: dict) -> FastAPI:
     async def op_cursor(step: dict) -> Any:
         act = None
         if "ref" in step:
+            # 带 ref 的移动是"指着某个东西"，而全屏层盖着时那个东西看不见。
+            # 纯坐标的 drift 不拦：鼠标画在最上层，闲晃本来就看得见。
+            refuse_when_slide_covers(f"移不到 {step['ref']}")
             info = await resolve_ref(step["ref"])
             x, y = float(info["x"]), float(info["y"])
             stage.hover = info
@@ -3540,7 +3619,7 @@ def build_app(cfg: dict) -> FastAPI:
         """
         if ref.startswith("dock:"):
             win = ref.split(":", 1)[1]
-            if win in ("term", "browser", "image"):
+            if win in WINDOWS:
                 was = stage.focus
                 was_open = stage.open.get(win, False)
                 # 点关着的程序就是启动它，与真实 dock 一致；op_focus 自己会开。
@@ -3569,6 +3648,10 @@ def build_app(cfg: dict) -> FastAPI:
         return {"acted": False, "reason": f"{ref} 无点击语义"}
 
     async def op_click(step: dict) -> Any:
+        # 点击落在全屏层下面的窗口上是没有意义的：那扇窗口此刻一个像素都
+        # 看不见，而点击照样会真的发给页面——画面上什么都没发生，回执却说
+        # 点中了。这一类"回执全绿、画面是错的"正是本文件反复要拦的。
+        refuse_when_slide_covers("点不下去")
         x, y = stage.cursor
         dwell = int(step.get("dwell", 120))
         settle_ms = int(step.get("settle_ms", 1500))
@@ -3735,10 +3818,10 @@ def build_app(cfg: dict) -> FastAPI:
     # 所以 open 回来的是原样。杀掉它们在画面上看不出任何区别（观众只看到窗口没了），
     # 代价却是真的：跑了一半的会话没了、登录态没了、重新拉起要几十秒。
 
-    WINDOWS = ("term", "browser", "image")
+    WINDOWS = ("term", "browser", "image", "video")
     # 关掉当前前台程序之后，焦点让给谁。终端排第一是因为它是这个 OS 的默认落点，
-    # 原先 image.close 也是还给它。三个都关着就交出 None，不硬找一个。
-    FOCUS_ORDER = ("term", "browser", "image")
+    # 原先 image.close 也是还给它。四个都关着就交出 None，不硬找一个。
+    FOCUS_ORDER = ("term", "browser", "image", "video")
 
     def next_focus(closing: str) -> str | None:
         for w in FOCUS_ORDER:
@@ -3771,8 +3854,8 @@ def build_app(cfg: dict) -> FastAPI:
             if win == "browser":
                 with suppress(Exception):
                     await push_browser_window(ms=0, reason="浏览器重新打开")
-            elif win == "image" and stage.win_geom.get("image"):
-                await broadcast({**stage.win_geom["image"], "ms": 0})
+            elif win in ("image", "video") and stage.win_geom.get(win):
+                await broadcast({**stage.win_geom[win], "ms": 0})
             # 启动即置前台：现实里打开一个程序，它的窗口就在最上面。
             await set_focus(win)
         elif stage.focus == win:
@@ -3868,7 +3951,7 @@ def build_app(cfg: dict) -> FastAPI:
         if stage.focus is None:
             raise ValueError(
                 f"桌面上没有开着的程序，{what}没有接收方——"
-                "先 `frago desktop window open --target term|browser|image`"
+                "先 `frago desktop window open --target term|browser|image|video`"
             )
         return stage.focus
 
@@ -4135,6 +4218,8 @@ def build_app(cfg: dict) -> FastAPI:
                     "term": "tmux 会话照常在跑",
                     "browser": "演员标签照常在，画面仍在收",
                     "image": "已装载的图片留着，重新打开还是那张",
+                    "video": "已装载的片子留着，重新打开还是那部；"
+                             "播放位置由 broker 记着，不会退回片头",
                 }[win]
                 if stage.focus is None:
                     out["note"] = ("桌面上已经没有开着的程序了，焦点为空；"
@@ -4468,6 +4553,11 @@ def build_app(cfg: dict) -> FastAPI:
         写的那份虚拟窗口几何。整条链上没有一处目测。
         """
         ref = (ref or "").strip()
+        # 取景对准的是"元素在桌面坐标系里应该在的位置"，它没有、也不可能有
+        # "那个位置现在显示着什么"这个信息——全屏层盖着时那儿显示的是一层
+        # HTML。这正是 2026-07-24 那次翻车的形态（回执全绿、镜头对着别处），
+        # 只是换了个来路，所以在同一处拦住。
+        refuse_when_slide_covers(f"取不了 {ref} 的景")
         # 终端区域取景（行范围 / 内容匹配）在这里截胡：它返回的是一片矩形，
         # 而 resolve_ref 的契约是"一个点"，两者形状不同，不该硬塞进同一条路。
         if ref.startswith("term:") and not re.fullmatch(
@@ -4532,7 +4622,7 @@ def build_app(cfg: dict) -> FastAPI:
         if kind == "term":
             return "term"
         tail = (t.get("ref") or "").split(":", 1)[-1]
-        return tail if tail in ("term", "browser", "image") else None
+        return tail if tail in WINDOWS else None
 
     async def activate_for_camera(targets: list[dict]) -> tuple[dict | None, str | None]:
         """把取景目标所在的窗口置为 active，返回（激活结果, 说不通的原因）。
@@ -4790,7 +4880,7 @@ def build_app(cfg: dict) -> FastAPI:
         _served_image.update({"bytes": data, "mime": IMAGE_MIME[ext], "name": path.name})
         # 几何先落、内容再落、最后才把程序打开：顺序反过来的话，窗口会先按
         # 上一张图的尺寸出现一瞬再跳到新尺寸，录进片子就是一次没人下过的抖动。
-        await push_image_window(geo)
+        await push_content_window("image", geo)
         await broadcast({"t": "image", "url": f"http://127.0.0.1:{cfg['port']}/image",
                          "name": path.name})
         stage.last_image = {"url": f"http://127.0.0.1:{cfg['port']}/image",
@@ -4825,6 +4915,420 @@ def build_app(cfg: dict) -> FastAPI:
         return Response(content=_served_image["bytes"],
                         media_type=_served_image["mime"],
                         headers={"Cache-Control": "no-store"})
+
+    # ── 全屏 HTML 展示层（slide） ──
+    #
+    # 整块桌面交给一份 HTML，压住窗口、dock 与菜单栏。这不是"一扇没有边框的
+    # 浏览器窗口"：虚拟浏览器窗口画的是**演员那台无头浏览器**的 jpeg 帧流，
+    # 一段动画走到画面上要经过 jpeg 编码、传输、解码、贴进 canvas 四道，
+    # 帧率与清晰度都被这条链路定死。而机位拍的就是桌面页本身，所以把 HTML
+    # 直接挂在桌面页里，动画就是 1920×1080 的原生像素，一次重编码都没有。
+    #
+    # 内容由本进程的 /slide 路由发出去，根目录是那份 HTML 所在的目录——
+    # 幻灯片式的页面往往带着同目录的图片、字体、css，只发单个文件的话
+    # 那些相对路径全断，而画面上只是"少了几张图"，没有一层会报错。
+    SLIDE_EXTENSIONS = {".html", ".htm"}
+    _served_slide: dict = {"root": None, "entry": None, "seq": 0}
+
+    def slide_covering() -> dict | None:
+        """全屏层此刻在不在。在的话，桌面上的窗口与 dock 一个都看不见。"""
+        return stage.last_slide
+
+    def refuse_when_slide_covers(what: str) -> None:
+        """全屏层盖着桌面时，拒绝一切"对着窗口比划"的动作。
+
+        这是本文件反复栽的那一类错的又一个入口：`mouse to --ref dock:term`、
+        `click`、`camera focus --ref page:...` 全都只认坐标与矩形，它们不知道
+        此刻那块位置上盖着一整层 HTML。照常执行的话，回执里 ok、
+        target_in_frame、clamped 每个字段都正确，而画面上鼠标在一片动画上空
+        划过、镜头推近了一块看不见的窗口——只有回看成片才发现。
+
+        观察类指令不走这条（`wait` 的探针带 observe），它们只看不做。
+        """
+        cur = slide_covering()
+        if cur is None:
+            return
+        raise RefError(
+            f"{what}：全屏 HTML 层正盖着整块桌面（{cur['name']}），"
+            f"窗口和 dock 此刻一个都看不见，对着它们比划会得到一份全绿的回执"
+            f"和一段错的画面。先 `frago desktop slide close` 把它撤掉。",
+            {**_available(), "slide": cur})
+
+    async def op_slide_open(step: dict) -> Any:
+        path = Path(step["path"]).expanduser()
+        if not path.is_file():
+            raise ValueError(f"HTML 不存在: {path}")
+        if path.suffix.lower() not in SLIDE_EXTENSIONS:
+            raise ValueError(
+                f"slide 只放 HTML: {path.suffix}"
+                f"（允许: {'/'.join(sorted(SLIDE_EXTENSIONS))}）。"
+                f"图片走 image open，片子走 video open")
+        _served_slide["root"] = path.parent.resolve()
+        _served_slide["entry"] = path.name
+        _served_slide["seq"] += 1
+        # 版本号进地址：地址不变的话，换一份内容之后浏览器直接读缓存，
+        # 画面永远停在第一版——图片浏览器踩过同一脚（见 /image 的 no-store）。
+        url = (f"http://127.0.0.1:{cfg['port']}/slide/{path.name}"
+               f"?v={_served_slide['seq']}")
+        ms = int(step.get("ms", 280))
+        was = stage.last_slide
+        stage.last_slide = {"url": url, "name": path.name, "path": str(path),
+                            "ms": ms}
+        seq = stage.layout_seq
+        await broadcast({"t": "slide", "url": url, "name": path.name, "ms": ms})
+        await asyncio.sleep(ms / 1000)
+        reported = await settle_layout(seq, 1200)
+        return {
+            "slide": path.name, "path": str(path), "url": url,
+            "root": str(_served_slide["root"]),
+            "replaced": (was or {}).get("name"),
+            "covers": "整块桌面（窗口、dock、菜单栏都在它下面）",
+            "on_top": "字幕(say)、贴纸栏(strap)、虚拟鼠标仍压在它上面",
+            "effect": {"observed": reported, "changed": True,
+                       "slide_on": (stage.layout.get("slide") or {}).get("on"),
+                       **({} if reported else {
+                           "note": "荧幕没在时限内报回 layout，"
+                                   "无法确认这一层已经铺上"})},
+            "note": "窗口此刻全被盖住：mouse / click / camera 这类对着窗口"
+                    "比划的指令会被拒绝，直到 slide close。",
+        }
+
+    async def op_slide_close(step: dict) -> Any:
+        ms = int(step.get("ms", 280))
+        was = stage.last_slide
+        if was is None:
+            return {"slide": None, "noop": True,
+                    "note": "本来就没有全屏层盖着，这一下没有改变任何东西",
+                    "effect": {"observed": True, "changed": False}}
+        stage.last_slide = None
+        seq = stage.layout_seq
+        await broadcast({"t": "slide", "url": None, "ms": ms})
+        await asyncio.sleep(ms / 1000)
+        reported = await settle_layout(seq, 1200)
+        return {"slide": was["name"], "closed": True, "noop": False,
+                "effect": {"observed": reported, "changed": True,
+                           "slide_on": (stage.layout.get("slide")
+                                        or {}).get("on")}}
+
+    @app.get("/slide")
+    @app.get("/slide/{rel:path}")
+    async def serve_slide(rel: str = "") -> Response:
+        """发那份 HTML 所在目录里的文件。根目录之外一个字节都不给。
+
+        路径校验用 resolve 之后的前缀比对，不是字符串拼接过滤：`..` 与符号
+        链接都能绕开后者，而这条路由发的是本机文件系统。
+        """
+        root = _served_slide["root"]
+        if root is None:
+            return Response(content=b"no slide", status_code=404,
+                            media_type="text/plain")
+        target = (root / (rel or _served_slide["entry"] or "")).resolve()
+        if not (target == root or root in target.parents):
+            return Response(content=b"out of slide root", status_code=403,
+                            media_type="text/plain")
+        if not target.is_file():
+            return Response(content=b"not found", status_code=404,
+                            media_type="text/plain")
+        mime = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+        # no-store 的理由同 /image：地址里虽然带了版本号，但页面内的相对资源
+        # （图片、字体、css）没有，改一版之后浏览器会读缓存里的旧件。
+        return Response(content=target.read_bytes(), media_type=mime,
+                        headers={"Cache-Control": "no-store"})
+
+    # ── 视频播放器（video） ──
+    #
+    # 第四个程序。载体是桌面页自己的 <video>，不经演员浏览器——理由与 slide
+    # 同源：机位拍的就是桌面页，片子在这张页面里原生解码，成片里那一块是
+    # 原始画质；走演员那条路的话每一帧都要多一次 jpeg 编解码。
+    #
+    # 播放状态是**荧幕报回来的**（layout 里的 video 字段），不是 broker 自己
+    # 声称的。这一条不能省：自动播放被浏览器拦下时页面一声不吭，画面停在第
+    # 一帧，而"我发过 play"与"它在播"长得一模一样。
+    VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".m4v", ".ogv"}
+    VIDEO_MIME = {
+        ".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm",
+        ".mov": "video/quicktime", ".ogv": "video/ogg",
+    }
+    _served_video: dict = {"path": None, "mime": None, "name": None}
+
+    def _probe_video(path: Path) -> dict:
+        """问 ffprobe 要片子的尺寸与时长。问不到就如实留白，不编。
+
+        尺寸决定窗口几何。探不到时退回 16:9，并在回执里说清楚是退回来的——
+        不说的话，一部 4:3 的片子会被摆进 16:9 的窗口，左右两条黑边看起来
+        像是片子本身带的。
+        """
+        try:
+            proc = _run(["ffprobe", "-v", "error", "-select_streams", "v:0",
+                         "-show_entries", "stream=width,height:format=duration",
+                         "-of", "json", str(path)], timeout=30)
+            info = json.loads(proc.stdout or "{}")
+            stream = (info.get("streams") or [{}])[0]
+            w, h = int(stream.get("width") or 0), int(stream.get("height") or 0)
+            dur = (info.get("format") or {}).get("duration")
+            return {"w": w or None, "h": h or None,
+                    "duration": round(float(dur), 2) if dur else None,
+                    "probed": bool(w and h)}
+        except Exception as exc:  # noqa: BLE001 探不到就留白，不许掀翻开片
+            return {"w": None, "h": None, "duration": None, "probed": False,
+                    "probe_error": f"{type(exc).__name__}: {exc}"}
+
+    def video_state() -> dict | None:
+        """荧幕最近一次报回来的播放状态。没报过就是 None，不拿默认值顶。"""
+        v = stage.layout.get("video")
+        return v if isinstance(v, dict) else None
+
+    def video_position() -> float:
+        """片子此刻放到第几秒。
+
+        它只服务于**补发**：录制机位是每次 rec start 现开的一页，不告诉它放到
+        哪儿了，它就从片头开始放，而人那块荧幕上片子早过半——成片和当时看到的
+        不是同一个东西。
+
+        **停着和播着取的不是同一份真值**，这一条是被自己坑出来的：荧幕报回来的
+        `currentTime` 是**上一次事件那一刻**的读数（layout 只在 play / pause /
+        seeked / ended 时重报，刻意不挂 timeupdate——那一秒四次会把 layout 淹掉）。
+        停着的时候这个数准且不会再变，就用它；播着的时候拿它当"现在"，位置会
+        永远停在开播那一秒，一部放了十分钟的片子补发给机位仍是第 7 秒。
+        所以播着的时候按 broker 自己的 pos/pos_at 外推，并用片长封顶。
+        """
+        rec = stage.last_video or {}
+        seen = video_state() or {}
+        # 荧幕报的片长优先（它是真正解码出来的），没有就用开片时 ffprobe 那份
+        dur = seen.get("duration") or rec.get("duration")
+        if seen.get("ended"):
+            # 放完了就是停在片尾，别外推到片长之外去
+            return float(dur) if dur else round(float(rec.get("pos") or 0.0), 2)
+        if not rec.get("playing"):
+            if seen.get("currentTime") is not None:
+                return float(seen["currentTime"])
+            return round(float(rec.get("pos") or 0.0), 2)
+        pos = float(rec.get("pos") or 0.0) + max(
+            0.0, time.time() - float(rec.get("pos_at") or time.time()))
+        if dur:
+            pos = min(pos, float(dur))
+        return round(pos, 2)
+
+    async def op_video_open(step: dict) -> Any:
+        path = Path(step["path"]).expanduser()
+        if not path.is_file():
+            raise ValueError(f"片子不存在: {path}")
+        ext = path.suffix.lower()
+        if ext not in VIDEO_EXTENSIONS:
+            raise ValueError(
+                f"不支持的视频格式: {ext}"
+                f"（允许: {'/'.join(sorted(VIDEO_EXTENSIONS))}）")
+        probe = _probe_video(path)
+        geo = video_geometry(probe["w"] or 1600, probe["h"] or 900)
+        _served_video.update({"path": path, "mime": VIDEO_MIME[ext],
+                              "name": path.name})
+        before = stage.focus
+        was_open = stage.open.get("video", False)
+        # 几何先落、内容再落、最后才把程序打开：顺序反过来的话，窗口会先按
+        # 上一部片子的尺寸出现一瞬再跳到新尺寸，录进片子就是一次没人下过的抖动。
+        await push_content_window("video", geo)
+        url = f"http://127.0.0.1:{cfg['port']}/video"
+        stage.last_video = {"url": url, "name": path.name, "path": str(path),
+                            # 片长记下来：外推位置要用它封顶，而荧幕那份
+                            # duration 要等它连上并报过一次 layout 才有。
+                            # 没有荧幕时（headless 地跑一串指令）照样不许
+                            # 把位置外推到片尾之外。
+                            "duration": probe["duration"],
+                            "playing": False, "pos": 0.0, "pos_at": time.time()}
+        seq = stage.layout_seq
+        await broadcast({"t": "video", "url": url, "name": path.name})
+        # 装载即打开，与"打开一份文件顺带拉起对应程序"同理；关它一律走
+        # window close --target video，四个程序同一条路。
+        await op_focus({"win": "video"})
+        reported = await settle_layout(seq, 4000)
+        out = {
+            "video": path.name, "win": "video", "path": str(path),
+            "size_bytes": path.stat().st_size,
+            "duration_sec": probe["duration"],
+            "video_size": {"w": probe["w"], "h": probe["h"]},
+            "geometry": geo,
+            "playing": False,
+            "state": video_state(),
+            "note": "装载即暂停在第一帧，开播走 `video play`——"
+                    "分镜要的是「到这一拍才开始放」，不是开窗就跑。"
+                    "画面恒静音：浏览器不放没有用户手势的有声播放，"
+                    "而录制链路本来也不收声音。",
+            "effect": _with_focus({"observed": reported},
+                                  {"before": before, "after": "video",
+                                   "focus_changed": before != "video",
+                                   **({} if was_open
+                                      else {"launched": "video"})}),
+        }
+        if not probe["probed"]:
+            out["size_note"] = (
+                "探不到片子的真实尺寸（ffprobe 不在或读不了这个文件），"
+                "窗口按 16:9 摆——真实比例不是 16:9 的话画面会留黑边")
+            if probe.get("probe_error"):
+                out["probe_error"] = probe["probe_error"]
+        if not was_open:
+            out["launched"] = "video"
+        return out
+
+    VIDEO_ACTIONS = ("play", "pause", "seek")
+
+    async def op_video_act(step: dict) -> Any:
+        action = step.get("action")
+        if action not in VIDEO_ACTIONS:
+            raise ValueError(
+                f"未知 video 动作: {action!r}（允许: {'/'.join(VIDEO_ACTIONS)}）")
+        if stage.last_video is None:
+            raise ValueError(
+                "播放器里还没有片子——先 `frago desktop video open <路径>`")
+        act = await ensure_active("video")
+        msg: dict = {"t": "video.act", "action": action}
+        if action == "seek":
+            if step.get("sec") is None:
+                raise ValueError("video seek 需要 --sec <秒>")
+            sec = max(0.0, float(step["sec"]))
+            msg["sec"] = sec
+            stage.last_video["pos"] = sec
+            stage.last_video["pos_at"] = time.time()
+        elif action == "play":
+            stage.last_video["pos"] = video_position()
+            stage.last_video["pos_at"] = time.time()
+            stage.last_video["playing"] = True
+        else:
+            stage.last_video["pos"] = video_position()
+            stage.last_video["pos_at"] = time.time()
+            stage.last_video["playing"] = False
+        seq = stage.layout_seq
+        await broadcast(msg)
+        # 等荧幕把播放状态报回来。这一步是这条指令全部的价值：不等的话，
+        # 回执说的只是"指令发出去了"，而自动播放被拦下时画面停在第一帧。
+        reported = await settle_layout(seq, 3000)
+        seen = video_state() or {}
+        effect: dict = {
+            "observed": reported,
+            "paused": seen.get("paused"),
+            "current_time": seen.get("currentTime"),
+            "duration": seen.get("duration"),
+        }
+        if not reported:
+            effect["note"] = "荧幕没在时限内报回播放状态，无法确认它真的执行了"
+        if seen.get("error"):
+            # 浏览器拒绝播放（自动播放策略、解码失败）时页面一声不吭，
+            # 画面停在第一帧。这一句就是把它说出来。
+            effect["blocked"] = seen["error"]
+            effect["note"] = ("荧幕报告播放被浏览器拒绝，画面停着——"
+                              "片子的编码可能不被支持（H.264/VP9 之外的都要试）")
+        return {"win": "video", "action": action,
+                **({"sec": msg["sec"]} if "sec" in msg else {}),
+                "video": stage.last_video["name"],
+                "state": seen or None,
+                "effect": _with_focus(effect, act)}
+
+    @app.get("/video")
+    async def serve_video(request: Request) -> Response:
+        """把片子发给桌面页的 <video>，支持 Range。
+
+        Range 不是可选的：浏览器请求媒体时先要一小段探元数据，服务端只会
+        整段回 200 的话，跳转（seek）没有可用的分段，长片还会被整段读进内存。
+        """
+        path = _served_video["path"]
+        if not path or not Path(path).is_file():
+            return Response(content=b"no video", status_code=404,
+                            media_type="text/plain")
+        path = Path(path)
+        size = path.stat().st_size
+        mime = _served_video["mime"] or "video/mp4"
+        rng = request.headers.get("range") or ""
+        m = re.fullmatch(r"bytes=(\d*)-(\d*)", rng.strip())
+        if not m or not size:
+            # 没有 Range 就整段发，交给 FileResponse 从磁盘流出去，
+            # 不把一部片子读进内存。
+            return FileResponse(path, media_type=mime,
+                                headers={"Accept-Ranges": "bytes",
+                                         "Cache-Control": "no-store"})
+        start_s, end_s = m.group(1), m.group(2)
+        if start_s:
+            start = int(start_s)
+            end = int(end_s) if end_s else size - 1
+        else:
+            # bytes=-N：最后 N 个字节
+            start = max(0, size - int(end_s or 0))
+            end = size - 1
+        start = max(0, min(start, size - 1))
+        end = max(start, min(end, size - 1))
+        with path.open("rb") as fh:
+            fh.seek(start)
+            chunk = fh.read(end - start + 1)
+        return Response(
+            content=chunk, status_code=206, media_type=mime,
+            headers={"Content-Range": f"bytes {start}-{end}/{size}",
+                     "Accept-Ranges": "bytes",
+                     "Content-Length": str(len(chunk)),
+                     "Cache-Control": "no-store"})
+
+    # ── 贴纸栏（strap） ──
+    #
+    # 电视节目画面下方那条说明字条。与 say 分层，不合流：say 是一句句说过去的
+    # 旁白，各自计时、说完就走；strap 是**挂着的**说明，讲这一段的全程都在。
+    # 合成一层的话，字幕到期清场会顺手把还该挂着的说明一起撤掉。
+    #
+    # 样式是四选一的预定义档，不开放自由 CSS：这条东西的用途是"少量说明文字"，
+    # 开放样式等于把排版决定推给调用方，而每次现调的结果就是每一镜长得不一样。
+    STRAP_STYLES = ("news", "bar", "ghost", "chip")
+    STRAP_AT = ("bottom", "top")
+    # 正文超过这个长度就不是"少量说明信息"了，是一段该走字幕或浮层卡片的话。
+    # 硬拒绝而不是截断：截断之后画面上是一句没说完的话，而回执一切正常。
+    STRAP_TEXT_MAX = 60
+
+    async def op_strap_show(step: dict) -> Any:
+        text = str(step.get("text") or "").strip()
+        if not text:
+            raise ValueError("strap show 需要要显示的文字")
+        if len(text) > STRAP_TEXT_MAX:
+            raise ValueError(
+                f"贴纸栏正文 {len(text)} 字，超过 {STRAP_TEXT_MAX} 字上限。"
+                f"它是画面上一条横过去的字条，字一多就要换行、挤掉画面主体——"
+                f"长内容走 `say`（旁白字幕）或 overlay 的 card")
+        style = step.get("style", "news")
+        if style not in STRAP_STYLES:
+            raise ValueError(
+                f"未知 strap 样式: {style!r}（允许: {'/'.join(STRAP_STYLES)}）")
+        at = step.get("at", "bottom")
+        if at not in STRAP_AT:
+            raise ValueError(
+                f"未知 strap 位置: {at!r}（允许: {'/'.join(STRAP_AT)}）")
+        title = step.get("title")
+        msg = {"t": "strap", "text": text, "style": style, "at": at}
+        if title:
+            msg["title"] = str(title)
+        if step.get("ms") is not None:
+            msg["ms"] = int(step["ms"])
+        was = stage.last_strap
+        # at_ts 只给补发用：带 ms 的字条到点会自己撤，而后连上的荧幕
+        # （机位）若照着补一份，画面上会多出一条早该消失的说明。
+        stage.last_strap = {**{k: v for k, v in msg.items() if k != "t"},
+                            "at_ts": time.time()}
+        await broadcast(msg)
+        return {
+            "strap": text, "style": style, "at": at,
+            "title": title,
+            "ms": msg.get("ms"),
+            "replaced": (was or {}).get("text"),
+            "persists": "ms" not in msg,
+            "note": None if "ms" in msg else
+                    "没给 --ms，这条字条会一直挂着，直到 `strap hide`——"
+                    "它答的是「这一段在讲什么」，不该自己到点消失",
+            "effect": {"observed": True, "changed": True},
+        }
+
+    async def op_strap_hide(_step: dict) -> Any:
+        was = stage.last_strap
+        stage.last_strap = None
+        await broadcast({"t": "strap.hide"})
+        if was is None:
+            return {"strap": None, "noop": True,
+                    "note": "本来就没有字条挂着",
+                    "effect": {"observed": True, "changed": False}}
+        return {"strap": was.get("text"), "hidden": True, "noop": False,
+                "effect": {"observed": True, "changed": True}}
 
     # ── overlay ──
     # 和 say 是两码事：say 是屏幕下方的字幕行，overlay 是压在桌面上的浮层标注。
@@ -5048,6 +5552,12 @@ def build_app(cfg: dict) -> FastAPI:
         "camera.reset": op_camera_reset,
         "camera.up": op_camera_up, "camera.down": op_camera_down,
         "overlay": op_overlay, "overlay.clear": op_overlay_clear,
+        # 全屏 HTML 层、播放器、贴纸栏。三样都进补发清单（见 /stream 的
+        # snapshot）——录制机位是后连的客户端，漏掉哪一样，成片和当时看到的
+        # 就不是同一个画面。
+        "slide.open": op_slide_open, "slide.close": op_slide_close,
+        "video.open": op_video_open, "video.act": op_video_act,
+        "strap.show": op_strap_show, "strap.hide": op_strap_hide,
         # image.close 已撤销：关窗口是窗口管理器的事，三个程序走同一条
         # win/action=close。它曾是唯一一个自带关闭动作的程序，那条路让
         # "关掉程序"在这个 OS 里有两套语义，而终端和浏览器只有其中不存在的那套。
@@ -5290,7 +5800,7 @@ def build_app(cfg: dict) -> FastAPI:
             "actor_gone_reason": browser.actor_gone_reason,
             "stale_clients": sorted(stage.stale_clients),
             "content_rects": {
-                w: stage.content_rect(w) for w in ("term", "browser", "image")
+                w: stage.content_rect(w) for w in WINDOWS
             },
             # 尺寸真值：演员标签天然的视口（没人覆写它），以及 broker 据它的
             # 宽高比算出来的虚拟浏览器几何。核对方法是手算 H = W / r。
@@ -5308,6 +5818,29 @@ def build_app(cfg: dict) -> FastAPI:
             # 而后者决定 term:rows / term:match 的行号基准。
             "term_view": term_view_state(),
             "hover": (stage.hover or {}).get("ref"),
+            # 全屏 HTML 层在不在。这一项必须在顶层看得见：它盖着整块桌面时，
+            # 窗口与 dock 一个都看不见，而 elements 里那些 ref 照常在——
+            # 不点破的话，对着它们比划会得到一份全绿的回执和一段错的画面。
+            "slide": (None if stage.last_slide is None else
+                      {"name": stage.last_slide["name"],
+                       "path": stage.last_slide["path"],
+                       "covers_desktop": True,
+                       "screen_reports_on": (stage.layout.get("slide")
+                                             or {}).get("on")}),
+            # 播放器：装的哪部片子、broker 记的播放意图、荧幕报回来的实况。
+            # 两份分开报，不合成一个数——它们对不上正是"指令发了但没播"
+            # 那种故障唯一的可见信号。
+            "video": (None if stage.last_video is None else
+                      {"name": stage.last_video["name"],
+                       "path": stage.last_video["path"],
+                       "intent": {"playing": bool(stage.last_video.get("playing")),
+                                  "position_sec": video_position()},
+                       "screen_reports": video_state()}),
+            # 贴纸栏：挂着的那条说明。没给 ms 的会一直挂着，所以它是个状态，
+            # 不是一次事件。
+            "strap": (None if stage.last_strap is None else
+                      {k: v for k, v in stage.last_strap.items()
+                       if k != "at_ts"}),
             # 取景框现状。它只作用于录制落盘的帧，所以这里报的是"下一帧会
             # 留下桌面的哪一块"，不是人在桌面页上看到的东西。
             "camera": recorder.camera.report(),

@@ -1148,3 +1148,290 @@ def test_camera_down_refuses_to_call_a_failure_a_success(sealed_broker,
     assert r["camera"]["browser_processes"] == {"before": 1, "after": 1}
     assert r["camera"]["cdp_answering"]["after"] is True
     assert "cdp stop" in r["camera"]["how_to_fix"]
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 三样新东西：全屏 HTML 展示层、视频播放器、贴纸栏
+#
+# 验的都是看输出看不出来的事：
+#
+#   · 全屏层盖着桌面时，"对着窗口比划"的指令被拒绝——这一类是回执全绿、
+#     画面是错的，只有回看成片才发现
+#   · /slide 只发那份 HTML 所在目录里的东西，根目录之外一律 403
+#   · 播放器是第四个程序，走 window open|close 那一条路，不另起一套
+#   · 播放位置记在 broker 手上——录制机位是后连的客户端，不记它就从片头放
+#   · 贴纸栏不给 ms 就一直挂着（它不是字幕），且四种样式之外一律拒绝
+# ══════════════════════════════════════════════════════════════════════
+
+def only(out):
+    """单步批次的那一条结果。"""
+    assert len(out["results"]) == 1, out["results"]
+    return out["results"][0]
+
+
+@pytest.fixture
+def slide_file(tmp_path):
+    root = tmp_path / "deck"
+    root.mkdir()
+    page = root / "act1.html"
+    page.write_text("<html><body>动画</body></html>", encoding="utf-8")
+    (root / "logo.svg").write_text("<svg/>", encoding="utf-8")
+    (tmp_path / "secret.txt").write_text("不该被发出去", encoding="utf-8")
+    return page
+
+
+# ── 全屏 HTML 展示层 ──────────────────────────────────────────────────
+
+def test_slide_open_covers_the_desktop(sealed_broker, slide_file):
+    code, out = post_control(sealed_broker, {"steps": [
+        {"op": "slide.open", "path": str(slide_file), "ms": 0}]})
+    r = only(out)
+    assert code == 200 and r["status"] == "ok"
+    assert r["slide"] == "act1.html"
+    # 根目录是那份 HTML 所在的目录，不是文件本身：幻灯页往往带着同目录的
+    # 图片与字体，只发单个文件的话那些相对路径全断，而画面上只是"少了几张图"。
+    assert r["root"] == str(slide_file.parent.resolve())
+    assert "?v=" in r["url"], "地址不带版本号的话，换一版之后浏览器读缓存"
+    # 字幕与贴纸栏压在它上面是设计，不是遗漏——满屏动画配一条说明字条
+    # 正是这层东西存在的理由。
+    assert "字幕" in r["on_top"] and "贴纸栏" in r["on_top"]
+
+
+def test_slide_only_takes_html(sealed_broker, tmp_path):
+    png = tmp_path / "shot.png"
+    png.write_bytes(b"x")
+    _, out = post_control(sealed_broker, {"steps": [
+        {"op": "slide.open", "path": str(png)}]})
+    r = only(out)
+    assert r["status"] == "failed"
+    # 指错路而不是只说"不行"：图片有图片的落点，片子有片子的落点。
+    assert "image open" in r["error"] and "video open" in r["error"]
+
+
+def test_slide_close_on_nothing_is_a_noop_not_a_lie(sealed_broker):
+    _, out = post_control(sealed_broker, {"steps": [
+        {"op": "slide.close", "ms": 0}]})
+    r = only(out)
+    assert r["status"] == "ok" and r["noop"] is True
+    assert r["effect"]["changed"] is False
+
+
+@pytest.mark.parametrize("step", [
+    {"op": "cursor", "ref": "dock:term"},
+    {"op": "click"},
+    {"op": "camera.focus", "refs": ["win:term"], "zoom": 1.5, "ms": 0},
+])
+def test_pointing_is_refused_while_a_slide_covers_the_desktop(
+        sealed_broker, slide_file, step):
+    """全屏层盖着时，对着窗口比划一律拒绝。
+
+    照常执行的话，回执里 ok / target_in_frame / clamped 每个字段都正确，
+    而画面上鼠标在一片动画上空划过、镜头推近了一块看不见的窗口——
+    只有回看成片才发现，那时现场早没了。
+    """
+    code, out = post_control(sealed_broker, {"steps": [
+        {"op": "slide.open", "path": str(slide_file), "ms": 0}, step]})
+    assert code == 500 and out["ok"] is False
+    bad = out["results"][1]
+    assert bad["status"] == "failed"
+    # 只说"不行"是没法自救的：把补救那一句一并带回去。
+    assert "slide close" in bad["error"]
+    assert bad["available"]["slide"]["name"] == "act1.html"
+
+
+def test_pure_coordinate_drift_still_works_under_a_slide(sealed_broker,
+                                                         slide_file):
+    """闲晃不拦：鼠标画在最上层，它本来就看得见。"""
+    code, out = post_control(sealed_broker, {"steps": [
+        {"op": "slide.open", "path": str(slide_file), "ms": 0},
+        {"op": "cursor", "x": 900, "y": 500, "ms": 0}]})
+    assert code == 200 and out["results"][1]["status"] == "ok"
+
+
+def test_slide_route_refuses_to_leave_its_root(sealed_broker, slide_file):
+    app = broker.build_app(dict(sealed_broker))
+    route = next(r for r in app.routes
+                 if getattr(r, "path", None) == "/slide/{rel:path}")
+    ctrl = next(r for r in app.routes if getattr(r, "path", None) == "/control")
+
+    # 还没开过 slide：没有根目录可发。
+    assert asyncio.run(route.endpoint(rel="act1.html")).status_code == 404
+
+    asyncio.run(ctrl.endpoint({"steps": [
+        {"op": "slide.open", "path": str(slide_file), "ms": 0}]}))
+    ok = asyncio.run(route.endpoint(rel="act1.html"))
+    assert ok.status_code == 200 and "动画".encode() in ok.body
+    assert ok.headers["cache-control"] == "no-store"
+    # 同目录的相对资源发得出来——幻灯页要的正是这个。
+    assert asyncio.run(route.endpoint(rel="logo.svg")).status_code == 200
+    # 根目录之外一个字节都不给。校验用 resolve 之后的前缀比对，
+    # 所以 `..` 绕不过去。
+    out = asyncio.run(route.endpoint(rel="../secret.txt"))
+    assert out.status_code == 403
+
+
+# ── 视频播放器 ────────────────────────────────────────────────────────
+
+FAKE_PROBE = json.dumps({"streams": [{"width": 1920, "height": 1080}],
+                         "format": {"duration": "42.5"}})
+
+
+@pytest.fixture
+def clip_file(tmp_path, monkeypatch):
+    mp4 = tmp_path / "take.mp4"
+    mp4.write_bytes(b"\0" * 2048)
+    monkeypatch.setattr(broker, "_run",
+                        lambda *a, **k: FakeCompleted(0, stdout=FAKE_PROBE))
+    return mp4
+
+
+def test_video_is_the_fourth_program(sealed_broker, clip_file):
+    """播放器与另外三个程序走同一条开关路，不另起一套语义。"""
+    _, out = post_control(sealed_broker, {"steps": [
+        {"op": "video.open", "path": str(clip_file)}]})
+    r = only(out)
+    assert r["status"] == "ok" and r["win"] == "video"
+    assert r["duration_sec"] == 42.5
+    assert r["video_size"] == {"w": 1920, "h": 1080}
+    assert r["launched"] == "video", "装载一份文件顺带把程序拉起来"
+    # 窗口框就是内容区：这扇窗没有标题栏，简洁边框是它的设计。
+    geo = r["geometry"]
+    assert geo["header_h"] == 0
+    assert geo["frame"] == geo["content"]
+    assert abs(geo["aspect_ratio"] - 16 / 9) < 0.01
+    # 装载即暂停在第一帧——分镜要的是「到这一拍才开始放」。
+    assert r["playing"] is False
+
+
+def test_video_window_closes_like_the_others(sealed_broker, clip_file):
+    _, out = post_control(sealed_broker, {"steps": [
+        {"op": "video.open", "path": str(clip_file)},
+        {"op": "win", "win": "video", "action": "close", "ms": 0}]})
+    closed = out["results"][1]
+    assert closed["status"] == "ok" and closed["open"] is False
+    # 关掉不动载体：回执要说清楚，免得下一个人去查一个根本没发生的事。
+    assert "片子留着" in closed["carrier_kept"]
+    assert set(closed["windows_open"]) == {"term", "browser", "image", "video"}
+
+
+def test_video_acts_need_a_loaded_clip(sealed_broker):
+    _, out = post_control(sealed_broker, {"steps": [{"op": "video.act",
+                                                     "action": "play"}]})
+    r = only(out)
+    assert r["status"] == "failed" and "video open" in r["error"]
+
+
+def test_video_position_is_remembered_by_the_broker(sealed_broker, clip_file):
+    """播放位置记在 broker 手上，不靠荧幕。
+
+    录制机位是每次 rec start 现开的一页，它拿到的是补发的快照。位置不记在
+    这边，机位就从片头开始放，而人那块荧幕上片子早过半——成片和当时看到的
+    不是同一个东西，而三层回执一路正常。
+    """
+    _, out = post_control(sealed_broker, {"steps": [
+        {"op": "video.open", "path": str(clip_file)},
+        {"op": "video.act", "action": "seek", "sec": 18.5},
+        {"op": "video.act", "action": "play"}]})
+    assert [r["status"] for r in out["results"]] == ["ok"] * 3
+    assert out["results"][1]["sec"] == 18.5
+    assert out["results"][2]["action"] == "play"
+
+
+def test_video_open_admits_it_could_not_measure_the_clip(sealed_broker,
+                                                         tmp_path):
+    """探不到真实尺寸时说出来，NEVER 拿 16:9 假装量过。
+
+    不说的话，一部 4:3 的片子被摆进 16:9 的窗口，左右两条黑边看起来像是
+    片子自带的。
+    """
+    mp4 = tmp_path / "unknown.mp4"
+    mp4.write_bytes(b"\0" * 16)
+    _, out = post_control(sealed_broker, {"steps": [
+        {"op": "video.open", "path": str(mp4)}]})
+    r = only(out)
+    assert r["status"] == "ok"
+    assert r["video_size"] == {"w": None, "h": None}
+    assert "16:9" in r["size_note"]
+
+
+def test_video_rejects_formats_it_cannot_play(sealed_broker, tmp_path):
+    bad = tmp_path / "clip.avi"
+    bad.write_bytes(b"x")
+    _, out = post_control(sealed_broker, {"steps": [
+        {"op": "video.open", "path": str(bad)}]})
+    assert only(out)["status"] == "failed"
+
+
+# ── 贴纸栏 ────────────────────────────────────────────────────────────
+
+def test_strap_stays_up_until_told_otherwise(sealed_broker):
+    """不给 ms 就一直挂着。它答的是「这一段在讲什么」，不是字幕。"""
+    _, out = post_control(sealed_broker, {"steps": [
+        {"op": "strap.show", "text": "产能利用率 78%", "title": "数据"}]})
+    r = only(out)
+    assert r["status"] == "ok" and r["persists"] is True
+    assert r["style"] == "news" and r["at"] == "bottom"
+    assert "strap hide" in r["note"]
+
+
+def test_strap_styles_are_a_closed_set(sealed_broker):
+    """样式四选一，不开放自由 CSS——开放的结果是每一镜长得不一样。"""
+    _, out = post_control(sealed_broker, {"steps": [
+        {"op": "strap.show", "text": "x", "style": "随便写的"}]})
+    r = only(out)
+    assert r["status"] == "failed"
+    for style in ("news", "bar", "ghost", "chip"):
+        assert style in r["error"], "报错里要把四档都摆出来，别让人去猜"
+
+
+def test_strap_refuses_a_paragraph(sealed_broker):
+    """超长正文硬拒绝，不截断：截断之后画面上是一句没说完的话，
+    而回执一切正常。"""
+    _, out = post_control(sealed_broker, {"steps": [
+        {"op": "strap.show", "text": "字" * 200}]})
+    r = only(out)
+    assert r["status"] == "failed"
+    assert "say" in r["error"] and "card" in r["error"]
+
+
+def test_strap_hide_on_nothing_says_so(sealed_broker):
+    _, out = post_control(sealed_broker, {"steps": [{"op": "strap.hide"}]})
+    r = only(out)
+    assert r["status"] == "ok" and r["noop"] is True
+
+
+def test_strap_replacement_is_reported(sealed_broker):
+    _, out = post_control(sealed_broker, {"steps": [
+        {"op": "strap.show", "text": "第一条"},
+        {"op": "strap.show", "text": "第二条"}]})
+    assert out["results"][1]["replaced"] == "第一条"
+
+
+def test_video_position_extrapolates_while_playing(sealed_broker, clip_file,
+                                                   monkeypatch):
+    """播着的时候位置按流逝时间走，不停在荧幕上一次报告那一秒。
+
+    layout 只在 play / pause / seeked / ended 时重报（不挂 timeupdate——那一秒
+    四次会把 layout 淹掉），所以荧幕报的 currentTime 是**上一次事件那一刻**的
+    读数。拿它当"现在"的话，一部放了十分钟的片子补发给录制机位仍是第 7 秒，
+    而机位就从那儿开始录。
+    """
+    app = broker.build_app(dict(sealed_broker))
+    ctrl = next(r for r in app.routes if getattr(r, "path", None) == "/control")
+    status = next(r for r in app.routes if getattr(r, "path", None) == "/status")
+    asyncio.run(ctrl.endpoint({"steps": [
+        {"op": "video.open", "path": str(clip_file)},
+        {"op": "video.act", "action": "seek", "sec": 7.5},
+        {"op": "video.act", "action": "play"}]}))
+
+    # 荧幕在 play 那一刻报了一次，此后一直不再报
+    st = asyncio.run(status.endpoint())
+    started = st["video"]["intent"]["position_sec"]
+
+    # 时间往前走 40 秒：位置要跟着走，且被片长（42.5 秒）封住
+    real = broker.time.time
+    monkeypatch.setattr(broker.time, "time", lambda: real() + 40)
+    st = asyncio.run(status.endpoint())
+    moved = st["video"]["intent"]["position_sec"]
+    assert moved > started + 30, f"位置停在了 {moved}，没跟着时间走"
+    assert moved <= 42.5, "外推不许越过片长"

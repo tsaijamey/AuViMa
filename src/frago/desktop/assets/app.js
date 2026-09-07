@@ -15,6 +15,11 @@
   // dock 距屏幕底边的留白，与 style.css 里 #dock 的 bottom 保持一致。
   var DOCK_MARGIN = 10;
 
+  // 桌面上的四个程序。**只有这一份名单**：写死三元/四元的地方每多一处，
+  // 下一扇窗进来就要挨个改一遍，而漏掉的那一处会在画面上静静失效
+  // （窗口画出来了却不可寻址，或者关掉了 dock 的灯还亮着）。
+  var WINS = ["term", "browser", "image", "video"];
+
   var els = {};
   var state = {
     ws: null,
@@ -24,7 +29,8 @@
     geom: {
       term: { x: 120, y: 90, w: 900, h: 560 },
       browser: { x: 620, y: 210, w: 1080, h: 700 },
-      image: { x: 760, y: 250, w: 480, h: 360 }
+      image: { x: 760, y: 250, w: 480, h: 360 },
+      video: { x: 560, y: 220, w: 800, h: 450 }
     },
     viewport: null,       // 舞台视口尺寸，hello 时下发
     pendingFrame: null,   // 只保留最新一帧待绘
@@ -34,14 +40,19 @@
     // 这期间一个字都不许往回报（见 sendLayout）。
     syncing: true,
     captionTimer: null,
-    appNames: { term: "Terminal", browser: "Chrome", image: "Preview" },
-    minimized: { term: false, browser: false, image: false },
+    appNames: { term: "Terminal", browser: "Chrome", image: "Preview",
+                video: "Player" },
+    minimized: { term: false, browser: false, image: false, video: false },
+    // <video> 上一次 play() 被浏览器拒绝的理由。必须留着并随 layout 报上去：
+    // 自动播放被拦下时页面一声不吭，画面停在第一帧，而指令回执写着"已开播"。
+    videoError: null,
     prevGeom: {},          // min/max 前的几何，restore 用
     // 程序在不在桌面上。与 minimized 是两件事：收起的程序还在跑（dock 亮着灯、
     // 窗口飞进了 dock），关掉的程序不在了（灯灭、窗口不存在）。两者共用一个
     // 标志的话，画面上就分不出"收起来了"和"退出了"，而这正是要能演出来的区别。
-    // 图片浏览器开机不在桌面上——它是被 image open 叫起来的。
-    open: { term: true, browser: true, image: false },
+    // 图片浏览器与播放器开机不在桌面上——它们是被 image open / video open
+    // 叫起来的。
+    open: { term: true, browser: true, image: false, video: false },
     // 终端缓冲区：历史 + 当前屏，broker 按增量推过来，这里存着并画出来。
     // base 是"broker 已经从头部丢掉多少行"，lines 的下标加上它才是缓冲区行号，
     // 两边靠这个数对齐。stuck = 视口贴着底：贴底时新输出跟着走（真实终端就是
@@ -54,13 +65,18 @@
   // 窗口元素按名字取。三扇窗共用同一套定位/焦点/收展逻辑，写死 term/browser
   // 三元会让第三扇窗进来时每个函数都要改一遍，且漏一处就在画面上静静失效。
   function winEl(win) {
-    return { term: els.winTerm, browser: els.winBrowser, image: els.winImage }[win];
+    return { term: els.winTerm, browser: els.winBrowser, image: els.winImage,
+             video: els.winVideo }[win];
   }
   function dockEl(win) {
-    return { term: els.dockTerm, browser: els.dockBrowser, image: els.dockImage }[win];
+    return { term: els.dockTerm, browser: els.dockBrowser, image: els.dockImage,
+             video: els.dockVideo }[win];
   }
+  // 播放器恒为 0：它没有标题栏，内容区就是整扇窗口。这不是"忘了量"——
+  // 见 style.css 里 .win-video 那段，简洁边框是这扇窗口的设计。
   function winHeaderH(win) {
-    return { term: els.termHeaderH, browser: els.browserHeaderH, image: els.imageHeaderH }[win];
+    return { term: els.termHeaderH, browser: els.browserHeaderH,
+             image: els.imageHeaderH, video: 0 }[win];
   }
 
   /* ── 底座：缩放适配 ── */
@@ -108,7 +124,7 @@
     if (win && !state.open[win]) openWin(win, 0);  // 点名一个关掉的程序 = 启动它
     if (win && state.minimized[win]) restoreWin(win); // 点名一个收起的窗口 = 召回它
     state.focus = win;
-    ["term", "browser", "image"].forEach(function (w) {
+    WINS.forEach(function (w) {
       winEl(w).classList.toggle("focused", win === w);
       dockEl(w).classList.toggle("active", win === w);
     });
@@ -167,14 +183,14 @@
   function collectElements() {
     var out = {};
     function put(ref, rect) { if (rect) out[ref] = rect; }
-    put("dock:term", screenRect(els.dockTerm));
-    put("dock:browser", screenRect(els.dockBrowser));
-    put("dock:image", screenRect(els.dockImage));
-    ["term", "browser", "image"].forEach(function (win) {
+    WINS.forEach(function (w) { put("dock:" + w, screenRect(dockEl(w))); });
+    WINS.forEach(function (win) {
       // 关掉的和收起的窗口都不在桌面上，不可寻址
       if (!state.open[win] || state.minimized[win]) return;
       var g = state.geom[win];
       put("win:" + win, { x: g.x, y: g.y, w: g.w, h: g.h });
+      // 播放器没有标题栏，querySelector 返回 null、winChildRect 返回 null，
+      // put 自然跳过——不是漏了，是这扇窗口本来就没有这个可寻址元素。
       put("win:" + win + ".titlebar",
           winChildRect(win, winEl(win).querySelector(".titlebar")));
     });
@@ -323,6 +339,150 @@
     els.imageHeaderH = withVisible(els.winImage, function (w) {
       return w.querySelector(".titlebar").offsetHeight;
     });
+    // 播放器不量：它没有标题栏，装饰高度恒为 0，见 winHeaderH。
+  }
+
+  /* ── 视频播放器 ──
+     载体是页面自己的 <video>，不经过演员浏览器的帧流。播放状态搭 layout 上报
+     回去（见 sendLayout）：broker 的回执要能证明"片子真的开播了"，而不是
+     "开播这条指令发出去了"——这两件事在画面停在第一帧时长得一模一样。 */
+  function round2(v) {
+    return (typeof v === "number" && isFinite(v)) ? Math.round(v * 100) / 100 : null;
+  }
+
+  function videoState() {
+    var v = els.videoView;
+    if (!v) return null;
+    return {
+      loaded: !!(v.currentSrc || v.getAttribute("src")),
+      // readyState >= 1 才有 duration/尺寸可言，报出去让 broker 分得清
+      // "还没加载完"和"加载完了但没在播"。
+      readyState: v.readyState,
+      duration: round2(v.duration),
+      currentTime: round2(v.currentTime),
+      paused: !!v.paused,
+      ended: !!v.ended,
+      w: v.videoWidth || null,
+      h: v.videoHeight || null,
+      error: state.videoError
+    };
+  }
+
+  function applyVideo(msg) {
+    var v = els.videoView;
+    if (!v) return;
+    state.videoError = null;
+    if (msg.url) {
+      // 地址恒为 /video，服务端已带 no-store；时间戳是双保险，
+      // 防中间层缓存——否则换片后 <video> 仍是上一部。
+      v.src = msg.url + (msg.url.indexOf("?") >= 0 ? "&" : "?") + "_=" + Date.now();
+      v.load();
+    } else {
+      v.removeAttribute("src");
+      v.load();
+    }
+    sendLayout();
+  }
+
+  function applyVideoAct(msg) {
+    var v = els.videoView;
+    if (!v) return;
+    if (msg.action === "seek") {
+      // 位置先落定再谈播放：seek 之后紧跟 play 是补发快照的常规顺序
+      // （机位是后连的客户端，它得先跳到当前位置再接着放）。
+      if (typeof msg.sec === "number") v.currentTime = Math.max(0, msg.sec);
+      sendLayout();
+      return;
+    }
+    if (msg.action === "pause") {
+      v.pause();
+      sendLayout();
+      return;
+    }
+    if (msg.action === "play") {
+      var p = v.play();
+      if (p && typeof p.catch === "function") {
+        p.catch(function (err) {
+          // 自动播放被拦下时页面一声不吭，画面停在第一帧。说出来，
+          // 否则它和"正常播着但这一段本来就静止"分不开。
+          state.videoError = String((err && err.name) || err);
+          sendLayout();
+        });
+      }
+    }
+  }
+
+  /* ── 全屏 HTML 展示层 ──
+     整块桌面交给一份 HTML。这里只管挂 iframe 与淡入淡出，内容由 broker 的
+     /slide 路由发。不做任何跨文档脚本：这块荧幕是显示器，不解释内容。 */
+  function applySlide(msg) {
+    var layer = els.slideLayer, frame = els.slideFrame;
+    if (!layer || !frame) return;
+    var dur = (typeof msg.ms === "number" ? msg.ms : 280);
+    layer.style.transitionDuration = dur + "ms";
+    if (msg.url) {
+      frame.src = msg.url;
+      layer.hidden = false;
+      // 先落到起始形态再补间，与 openWin 同一条路数：直接从 hidden 变可见
+      // 没有起始值可插值，画面是"啪"地出现。
+      void layer.offsetWidth;
+      layer.classList.add("in");
+      state.slideOn = true;
+    } else {
+      state.slideOn = false;
+      layer.classList.remove("in");
+      // 等淡出走完再摘，并且认账：期间可能又来一条 open，那时这个定时器
+      // 必须走人，否则它会在几百毫秒后把刚铺上的一层重新藏起来。
+      setTimeout(function () {
+        if (state.slideOn) return;
+        layer.hidden = true;
+        frame.removeAttribute("src");
+      }, dur);
+    }
+    sendLayout();
+  }
+
+  /* ── 贴纸栏 ──
+     一条挂着的说明字条，与字幕分层。样式是预定义的四种之一，
+     由 broker 校验过才发下来，这里只负责摆。 */
+  function applyStrap(msg) {
+    var layer = els.strapLayer;
+    if (!layer) return;
+    layer.innerHTML = "";
+    layer.className = (msg.at === "top") ? "at-top" : "at-bottom";
+    var box = document.createElement("div");
+    box.className = "strap strap-" + msg.style;
+    if (msg.title) {
+      var t = document.createElement("div");
+      t.className = "strap-title";
+      t.textContent = msg.title;
+      box.appendChild(t);
+    }
+    var body = document.createElement("div");
+    body.className = "strap-text";
+    body.textContent = msg.text;
+    box.appendChild(body);
+    layer.appendChild(box);
+    layer.hidden = false;
+    requestAnimationFrame(function () { box.classList.add("in"); });
+    clearTimeout(state.strapTimer);
+    // 不给 ms 就一直挂着：贴纸栏答的是"这一段在讲什么"，讲完由指令撤，
+    // 不该自己到点消失——那是字幕的行为。
+    if (typeof msg.ms === "number" && msg.ms > 0) {
+      state.strapTimer = setTimeout(hideStrap, msg.ms);
+    }
+  }
+
+  function hideStrap() {
+    var layer = els.strapLayer;
+    if (!layer || layer.hidden) return;
+    clearTimeout(state.strapTimer);
+    var box = layer.firstChild;
+    if (box) box.classList.remove("in");
+    setTimeout(function () {
+      layer.hidden = true;
+      layer.innerHTML = "";
+    }, 320);
   }
 
   // 量一个字符格子的实际尺寸，据此算出终端窗口能放下多少行列。
@@ -507,14 +667,20 @@
     // 历史里，于是每开一次机位（rec start 都是新开一页）画面上就多堆一行。
     // 报得晚几十毫秒没有任何代价，报得早的代价是往会话里写垃圾。
     if (state.syncing) return;
+    var windows = {};
+    WINS.forEach(function (w) { windows[w] = contentRect(w); });
     send({
       t: "layout",
       uiVersion: CONFIG.uiVersion,
       contentId: CONFIG.contentId,
       instanceId: CONFIG.instanceId,
       desktop: { w: CONFIG.desktop.w, h: CONFIG.desktop.h },
-      windows: { term: contentRect("term"), browser: contentRect("browser"),
-                 image: contentRect("image") },
+      windows: windows,
+      // 播放状态与全屏层现状搭这趟车。它们与几何同源——都是"只有这块荧幕
+      // 量得到"的事实，而 broker 的回执要拿它们证明世界真的变了：
+      // "片子开播了"和"开播这条指令发出去了"，在画面停在第一帧时长得一样。
+      video: videoState(),
+      slide: { on: !!state.slideOn },
       metrics: {
         area: desktopArea(),
         menubar: els.menubar ? els.menubar.offsetHeight : 26,
@@ -860,6 +1026,22 @@
         }
         sendLayout();
         break;
+      case "video":
+        // 与 image 同构：这条只管**内容**，播放器窗口开没开由 win 消息决定。
+        applyVideo(msg);
+        break;
+      case "video.act":
+        applyVideoAct(msg);
+        break;
+      case "slide":
+        applySlide(msg);
+        break;
+      case "strap":
+        applyStrap(msg);
+        break;
+      case "strap.hide":
+        hideStrap();
+        break;
       case "chrome":
         applyChrome(msg);
         break;
@@ -1145,6 +1327,11 @@
     els.winTerm = $("win-term");
     els.winBrowser = $("win-browser");
     els.winImage = $("win-image");
+    els.winVideo = $("win-video");
+    els.videoView = $("video-view");
+    els.slideLayer = $("slide-layer");
+    els.slideFrame = $("slide-frame");
+    els.strapLayer = $("strap-layer");
     els.termScroll = $("term-scroll");
     els.termScreen = $("term-screen");
     els.imageView = $("image-view");
@@ -1155,6 +1342,7 @@
     els.dockTerm = $("dock-term");
     els.dockBrowser = $("dock-browser");
     els.dockImage = $("dock-image");
+    els.dockVideo = $("dock-video");
     els.caption = $("caption");
     els.overlayLayer = $("overlay-layer");
     els.vcursor = $("vcursor");
@@ -1179,12 +1367,17 @@
 
     startWallpaper();
     startScanline();
-    applyGeom("term", state.geom.term, 0);
-    applyGeom("browser", state.geom.browser, 0);
-    applyGeom("image", state.geom.image, 0);
-    // dock 的灯照初始开关状态点亮。broker 一连上就会补发三个程序各自的真实
+    WINS.forEach(function (w) { applyGeom(w, state.geom[w], 0); });
+    // 播放状态每变一次就重报一次 layout。不挂这些的话，broker 只知道自己
+    // 发过什么指令，不知道片子有没有真的开播——而"发过 play"与"在播"
+    // 在画面停住时长得一模一样。timeupdate 不挂：它一秒四次，会把 layout 淹掉。
+    ["loadedmetadata", "play", "pause", "seeked", "ended", "error"]
+      .forEach(function (evt) {
+        els.videoView.addEventListener(evt, function () { sendLayout(); });
+      });
+    // dock 的灯照初始开关状态点亮。broker 一连上就会补发四个程序各自的真实
     // 状态覆盖这里，这只是连上之前的样子。
-    ["term", "browser", "image"].forEach(function (w) {
+    WINS.forEach(function (w) {
       dockEl(w).classList.toggle("running", state.open[w]);
       winEl(w).hidden = !state.open[w];
     });

@@ -504,7 +504,7 @@ def _broker_view(st) -> dict:
               "cdp_ports", "pid")
     if st is None:
         return {"reachable": False, "recording": None,
-                **{f: None for f in fields}}
+                **dict.fromkeys(fields)}
     return {
         "reachable": True,
         **{f: st.get(f) for f in fields},
@@ -543,9 +543,9 @@ def _wait_for_existing_screen(port, content_id: str) -> bool:
     deadline = time.time() + EXISTING_SCREEN_PROBE_S
     while True:
         st = _fetch_status(port)
-        if st and st.get("content_id") == content_id:
-            if any(c.get("primary") for c in (st.get("clients") or [])):
-                return True
+        if (st and st.get("content_id") == content_id
+                and any(c.get("primary") for c in (st.get("clients") or []))):
+            return True
         if time.time() >= deadline:
             return False
         time.sleep(0.2)

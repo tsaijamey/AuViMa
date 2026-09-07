@@ -4,7 +4,7 @@
 
 ## 是什么
 
-一块假 macOS 桌面，上面三扇窗口装的是**真东西**：一个真实 tmux 会话、一个真实浏览器标签页、一个图片浏览器。整块桌面可脚本操控——鼠标移动、点击、窗口层级、镜头推拉都能下指令，所以一段自动化流程可以被演成"人在操作"的样子录下来。
+一块假 macOS 桌面，上面四扇窗口装的是**真东西**：一个真实 tmux 会话、一个真实浏览器标签页、一个图片浏览器、一个视频播放器。除了窗口，桌面上还能铺一层全屏 HTML（放自己做的动画，像幻灯）、挂一条贴纸栏（电视节目那种说明字条）。整块桌面可脚本操控——鼠标移动、点击、窗口层级、镜头推拉都能下指令，所以一段自动化流程可以被演成"人在操作"的样子录下来。
 
 入口是 `frago desktop`，与 `frago browser` 同级：一个驱动真实浏览器，一个驱动这块舞台。
 
@@ -29,9 +29,12 @@ frago desktop browser open https://...     # 然后才是干活
 | 标签页 | `tab open <url>` / `tab switch <n>` / `tab close <n>` |
 | 终端窗口 | `term run "<命令>"` / `term read` / `term scroll --lines <n>\|--to "<文字>"\|--to-end` |
 | 图片浏览器 | `image open <本地图片路径>` |
+| 视频播放器 | `video open <本地视频>` / `video play` / `video pause` / `video seek --sec <秒>` |
+| 全屏 HTML | `slide open <本地 html>` / `slide close` |
+| 贴纸栏 | `strap show "<少量文字>" [--title <标签>] [--style news\|bar\|ghost\|chip] [--at bottom\|top] [--ms <毫秒>]` / `strap hide` |
 | 鼠标 | `mouse to --ref <ref>` / `mouse drift` / `mouse click` |
-| 开关程序 | `window open\|close --target term\|browser\|image` |
-| 窗口 | `window min\|max\|restore\|move` / `focus term\|browser\|image` |
+| 开关程序 | `window open\|close --target term\|browser\|image\|video` |
+| 窗口 | `window min\|max\|restore\|move` / `focus term\|browser\|image\|video` |
 | 镜头 | `camera focus --ref <ref> --zoom <k>` / `camera pan` / `camera reset` / `camera up\|down` |
 | 录制 | `rec start --name <n>` / `rec stop` |
 | 讲解 | `say "<旁白>"` |
@@ -57,11 +60,23 @@ frago desktop browser open https://...     # 然后才是干活
 
 **指向窗口的动作自动把那扇窗口提到最前。** `browser open`、`browser click`、`tab switch`、`mouse to --ref page:...`、`camera focus` 落在页面上——这些都会先激活浏览器窗口再动作，不需要先发 `focus`。激活如实写在回执的 `effect.focus` 里。反过来，纯观察（`wait`、`term read`）不动焦点。
 
-**关掉程序和收起窗口是两件事。** `window close --target term` 让终端离开桌面——窗口缩着淡出、dock 上那颗灯灭掉；`window min` 只是把窗口飞进 dock，程序还在跑、灯还亮着。两者在画面上刻意长得不一样，因为观众要分得出"退出了"和"收起来了"。三扇窗（term / browser / image）走的是同一条 `window open|close`，图片浏览器没有自己的关法。
+**关掉程序和收起窗口是两件事。** `window close --target term` 让终端离开桌面——窗口缩着淡出、dock 上那颗灯灭掉；`window min` 只是把窗口飞进 dock，程序还在跑、灯还亮着。两者在画面上刻意长得不一样，因为观众要分得出"退出了"和"收起来了"。四扇窗（term / browser / image / video）走的是同一条 `window open|close`，图片浏览器和播放器都没有自己的关法。
 
-**关掉不动载体。** tmux 会话照常在跑、演员标签照常在收画面、已经装进图片浏览器的那张图留着，所以 `window open` 叫回来的是原样，不是一个新开的空程序。看到窗口没了别去查会话被谁杀了——回执里的 `carrier_kept` 就是说这件事。
+**关掉不动载体。** tmux 会话照常在跑、演员标签照常在收画面、已经装进图片浏览器的那张图和播放器里那部片子都留着（片子连播放位置都记着，不会退回片头），所以 `window open` 叫回来的是原样，不是一个新开的空程序。看到窗口没了别去查会话被谁杀了——回执里的 `carrier_kept` 就是说这件事。
 
-**指向某个程序的动作会把它重新打开。** 终端关着时 `term run` 的正确结果是终端回来并执行，不是报一句"你得先打开它"；发生了就在回执的 `effect.launched` 里写着。要拍空桌面，别发这类指令就是了——三个程序全关掉是合法状态，那时 `focus` 是 `null`，键盘输入没有接收方，`type` / `key` 会明确报错。
+**指向某个程序的动作会把它重新打开。** 终端关着时 `term run` 的正确结果是终端回来并执行，不是报一句"你得先打开它"；发生了就在回执的 `effect.launched` 里写着。要拍空桌面，别发这类指令就是了——四个程序全关掉是合法状态，那时 `focus` 是 `null`，键盘输入没有接收方，`type` / `key` 会明确报错。
+
+**全屏 HTML 是铺一层，不是开一扇窗。** `slide open <html>` 把整块桌面交给一份 HTML——窗口、dock、菜单栏全在它下面。这条路存在的理由是画质：虚拟浏览器窗口画的是演员那台无头浏览器的 jpeg 帧流，一段动画到画面上要过编码、传输、解码、贴画布四道；而机位拍的就是桌面页本身，把 HTML 挂在桌面页里，动画走的是 1920×1080 的原生像素，一次重编码都没有。所以自己做的动画走 `slide`，看一个真实网页走 `browser open`，两条链不要混。
+
+HTML 由你自己产出，调试走 `frago browser`（`file://` 打开、`get-content`、`screenshot`），调好了再交给 `slide open`。发出去的根目录是那份 HTML 所在的目录，所以同目录的图片、字体、css 这些相对引用都拿得到；目录之外的文件一律 403。
+
+**全屏层盖着桌面时，对着窗口比划的指令会被拒绝。** `mouse to --ref`、`click`、`camera focus` 三条一律报错并叫你先 `slide close`。不拦的话它们照常执行、回执里每个字段都正确，而画面上鼠标在一片动画上空划过、镜头推近了一块看不见的窗口——这种错只有回看成片才发现。字幕（`say`）和贴纸栏（`strap`）不受影响，它们本来就压在这一层上面。
+
+**先 `camera up` 再 `slide open`。** 机位是 `rec start` 现开的一页，它连上来时会收到补发的现状并从头加载那份 HTML——动画会在机位那边重新开始播。想让成片里的动画从头完整，就让机位先在场。
+
+**播放器装载即暂停在第一帧，开播是另一条指令。** `video open <片子>` 只是把片子装进去并把窗口打开，`video play` 才开始放——分镜要的是"到这一拍才开始放"，不是开窗就跑。画面恒静音：浏览器不放没有用户手势的有声播放，而录制链路本来也不收声音。回执里的 `effect` 是荧幕报回来的实况（在不在播、放到第几秒），不是"指令发出去了"——自动播放被拦下时画面停在第一帧，那两件事在回执里必须分得开。
+
+**贴纸栏不会自己消失，字幕会。** `say` 是一句句流过去的旁白，各自计时、说完就走；`strap show` 挂上去就一直在，直到 `strap hide`（真要它自己走就给 `--ms`）。两者分层，可以同时在场——广播画面里也是字条在上、字幕在下。样式四选一：`news`（标签格 + 正文条，电视新闻那种）、`bar`（一整条实色）、`ghost`（毛玻璃，不抢戏）、`chip`（短胶囊）。正文超过 60 字直接拒绝——它是画面上横过去的一条字，长内容走 `say` 或 overlay 的 card。
 
 **终端窗口画的是一整块可回看的缓冲区，不是最后一屏。** 命令输出再长也全在里面（历史 + 当前屏），`term read --lines 200` 够得着已经滚出画面的部分，`term run` 的回执按整个缓冲区算新增行。想让**画面**回到前面那段，只有 `term scroll` 这一条路——桌面页对键鼠完全免疫，人手滚不动它，也别去 tmux 那边翻页，回看的视口在页面这一侧，两套滚动会打架。
 

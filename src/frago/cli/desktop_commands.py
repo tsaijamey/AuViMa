@@ -57,8 +57,10 @@ def desktop_group(args: tuple[str, ...]) -> None:
     """Drive the virtual desktop stage (recording / demo).
 
     A fake macOS desktop whose windows show a real tmux session, a real browser
-    tab, and a local image. Everything on it is scriptable, so a workflow can be
-    replayed as a video take.
+    tab, a local image and a local video. It can also hand the whole screen to
+    one HTML file (slide) and hang a broadcast-style caption strap over the
+    picture. Everything on it is scriptable, so a workflow can be replayed as a
+    video take.
 
     \b
     Always start here:
@@ -73,6 +75,19 @@ def desktop_group(args: tuple[str, ...]) -> None:
       frago desktop term run "ls -la"
       frago desktop camera focus --ref page:text:Explore --zoom 1.8
       frago desktop say "旁白一句"
+
+    \b
+    Full-screen HTML, video, and the caption strap:
+      frago desktop slide open ~/deck/act1.html   # 铺满桌面，盖住所有窗口
+      frago desktop slide close
+      frago desktop video open ~/clips/take.mp4   # 装载即暂停在第一帧
+      frago desktop video play                    # 到这一拍才开始放
+      frago desktop strap show "产能利用率 78%" --title 数据 --style news
+      frago desktop strap hide
+    Your own animation goes through `slide` (rendered natively in the page
+    that gets recorded); a real web page goes through `browser`. While a slide
+    covers the desktop, mouse / click / camera are refused — the windows they
+    aim at are not visible, and the receipt would be green anyway.
 
     \b
     Addressing a page element (`page:` refs) — four spellings, one meaning each:
