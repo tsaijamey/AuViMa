@@ -119,7 +119,11 @@
 
 - name: hook-rules-authoring
   category: better
-  brief: "观察到重复路由模式时用 frago hook-rules add 沉淀为数据化规则，不改 Rust"
+  brief: "观察到重复路由模式时用 frago hook-rules add 沉淀为数据化规则，不改 Rust；hook 引擎里所有会变的内容都在文件里，改哪一样都不用重建引擎——判读说明书、闸门信号表、随包规则在 ~/.frago/hook/，用户规则与代理纪律在 ~/.frago 顶层"
+
+- name: stop-signals-authoring
+  category: better
+  brief: "收尾时判断该不该结束，先过一道不花钱的本地闸门再问轻量 ai；闸门看什么写在 ~/.frago/hook/stop-signals.json，一条信号含匹配对象与给模型看的那句话，写窄不写宽（第二人称区分「函数错了」与「你错了」），改完 frago-core --stop-check 验"
 
 - name: session-handoff
   category: better

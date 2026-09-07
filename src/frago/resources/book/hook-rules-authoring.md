@@ -125,6 +125,26 @@ frago hook-rules add --rule='{
 - agent 加的规则 30 天 TTL；真正长期有价值的规则等稳定后升级为 `source=userdir`（永不过期，规划中）
 - 不要绕过 CLI 直接编辑 `~/.frago/hook-rules.json`，会绕过 seeding 和校验
 
+## 规则不止这一份文件
+
+`hook-rules.json` 管的是「命中字面量就注入或拦截」这一类。hook 引擎里所有会变的内容都已经外置，改哪一样都不用重建引擎，下一轮生效：
+
+| 落点 | 管什么 | 谁改 |
+|---|---|---|
+| `~/.frago/hook-rules.json` | 你自己的路由与禁令 | `frago hook-rules add` |
+| `~/.frago/hook/builtin-rules.json` | 随包发布的那批规则 | 直接编辑；升级不会覆盖已存在的文件 |
+| `~/.frago/hook/prompt.md` | 提问那一环，轻量 ai 被要求输出什么 | 直接编辑 |
+| `~/.frago/hook/stop.md` | 收尾那一环的免拦清单与判据 | 直接编辑 |
+| `~/.frago/hook/veto.md` | 否决那一环，什么算「只有用户能决定」 | 直接编辑 |
+| `~/.frago/hook/fallback.md` | 轻量 ai 没出声时说什么 | 直接编辑 |
+| `~/.frago/hook/stop-signals.json` | 收尾闸门的信号表，见 `frago book stop-signals-authoring` | 直接编辑 |
+| `~/.frago/agent-disciplines.md` | 轻量 ai 判断时依据的纪律 | 直接编辑 |
+| `~/.frago/config.json` | 开关、经验域名 | 直接编辑 |
+
+说明书文件里，`>>>` 之后那一行是模型回复被预填的开头，不是正文；`{{failure_domain}}` 会被配置里的经验域名替换。
+
+任何一份缺失或读不出来，对应那一层就当作关掉，日志记在 `~/.frago/hook-review.log`，不会让 hook 崩。改完想确认引擎那边确实是从文件读的，跑 `frago-core --audit-rules`。
+
 ## 下次召回入口
 
 ```bash

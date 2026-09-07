@@ -1,0 +1,33 @@
+{
+  "_note": "收尾闸门的信号表。闸门是不花钱的字面判断，决定这一轮值不值得问模型；命中任何一条才会去问。改这里不用重建引擎，下一轮生效。写法见 frago book stop-signals-authoring。",
+
+  "signals": [
+    {
+      "name": "admitted",
+      "describe": "收尾时自陈有东西没验证",
+      "closing_text_regex": "没有?被?验证|未验证|没验过|没跑过|没测过|没在[^。\n]{0,12}跑过|只跑了|仅跑了|待验证|没有实测|未实测|没做端到端|没跑端到端|没有端到端|没被覆盖|这些没做|以下没做"
+    },
+    {
+      "name": "asked",
+      "describe": "把该自己决定的事抛回给用户问",
+      "closing_text_regex": "要不要我|要不要现在|要现在[^。\n]{0,8}吗|需要我[^。\n]{0,8}吗|要我[^。\n]{0,8}吗|是否需要我|你要不要|我可以[^。\n]{0,6}吗|等你确认|等你点头|等你发话|你说一声|告诉我一声|要不要开这个头|说一声我就"
+    },
+    {
+      "name": "code_edit",
+      "describe": "改了代码但整轮一条检查命令都没跑",
+      "describe_when_cleared": "改了代码，本轮跑过检查命令（是否够用你判断）",
+      "tool_name_in": ["Edit", "Write", "MultiEdit", "NotebookEdit"],
+      "tool_arg_regex": "\\.(py|rs|ts|tsx|js|jsx|mjs|vue|svelte|go|java|c|cc|cpp|h|hpp|rb|sh|bash|zsh)$",
+      "cleared_by_tool_regex": "\\b(pytest|tox|jest|vitest|playwright|mocha|npm\\s+(run\\s+)?(test|build|lint)|yarn\\s+(test|build)|pnpm\\s+(test|build)|cargo\\s+(test|build|check|clippy|zigbuild)|go\\s+(test|build|vet)|make\\s+(test|check|build|lint)|uv\\s+run\\s+pytest|python3?\\s+-m\\s+(pytest|py_compile|unittest)|py_compile|node\\s+--check|ruff|eslint|tsc|mypy|shellcheck|alembic\\s+upgrade|frago\\s+recipe\\s+validate|frago\\s+hook-rules\\s+validate)\\b"
+    },
+    {
+      "name": "corrected",
+      "describe": "这一轮被用户纠正过，或 agent 自陈走反了",
+      "user_text_regex": "你他妈|你妈的|操你|傻逼|煞笔|你真的?太?蠢|你在搞什么|搞什么呢|卧槽你|你根本没|你眼睛|不是让你|我叫你|谁让你|你怎么整天|别再问|别他妈|你又在|你还是没|你怎么又|重新描述|你做错|你错了|你搞错|方向错|不正确|不符合预期|你也在犯|你自己吞|我已经厌恶|你在犯",
+      "closing_text_regex": "我理解错|我误解|我读错|我把[^。\n]{0,12}当成|我做错|我方向错|我搞错|我不该|走反了|方向反了|顺序反了|返工|我刚才[^。\n]{0,10}错|问偏了|说岔了|是我的错|我漏掉|我吞了"
+    }
+  ],
+
+  "_discard_note": "判读给出的理由里出现这些措辞就整条丢弃。它们会留在会话记录里影响后面每一轮，不只是这一轮。",
+  "discard_reason_regex": "别问用户|不要问用户|别再问|不用问用户|别管用户|无需征求|不必征求|不用等用户|别等用户|自己决定就行|别把.{0,6}推给用户|不要征求"
+}

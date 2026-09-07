@@ -30,6 +30,17 @@ SEED_MAP: tuple[tuple[str, str], ...] = (
     ("book", "book"),
     ("constitution.md", "constitution.md"),
     ("agent-disciplines.md", "agent-disciplines.md"),
+    # The hook engine's rules. They used to be compiled into the engine binary,
+    # which meant every wording change cost a four-platform rebuild and put
+    # editing them out of reach of anyone who does not write Rust. The engine
+    # now reads them from here and carries no copy, so these files are the only
+    # place they exist on a machine — and, like everything else in this map, an
+    # edited copy is never overwritten by an upgrade.
+    #
+    # Directory to directory, same name on both sides: the wheel's layout and
+    # the machine's layout are the one thing a reader should not have to hold
+    # two versions of in their head.
+    ("hook", "hook"),
 )
 
 
