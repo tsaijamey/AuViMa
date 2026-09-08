@@ -44,6 +44,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import time
 from collections.abc import Iterable, Iterator, Sequence
 from concurrent.futures import ProcessPoolExecutor
@@ -443,11 +444,51 @@ def _loads(line: bytes) -> Any:
         return None
 
 
+#: 斜杠命令写进档案时的壳。人在输入框里打的是 ``/goal 把日历挪到底部``，档案里躺着的是
+#: ``<command-name>/goal</command-name>``、``<command-message>``、``<command-args>`` 三段。
+_COMMAND_NAME_RE = re.compile(r"<command-name>([\s\S]*?)</command-name>")
+_COMMAND_ARGS_RE = re.compile(r"<command-args>([\s\S]*?)</command-args>")
+
+
+def _first_user_text(txt: str) -> str | None:
+    """这条用户记录里，人**自己打的那句话**是什么；不是人打的返回 None。
+
+    分界线是**这条命令里有没有人写的话**：
+
+    - ``/goal 两个问题…``、``/frago.run 把日历挪到底部`` 这种带参数的，参数就是人打的
+      那句话，只是被包在壳里。把壳拆开还原成"命令名 + 参数"。
+    - ``/clear``、``/compact`` 这种光杆命令，是会话管理动作，不是一句话。跳过去问下一条。
+    - ``<local-command-stdout>``，命令打印给人看的东西，同样不是人说的。跳过。
+    - 其余照原样。
+
+    **为什么要拆壳。** 从前带参数的那种也整个跳过，于是一场会话的第一句话如果是
+    ``/goal 两个问题…``，它就没有"开口第一句"；左栏那一行的标题退到最后一档，写的是
+    一串会话编号。人刚从页面开的会话在清单里没有名字，而他明明打了一整句话。
+
+    **与 ``claude_sessions._scan_file()`` 在这一条上不同。** 那条路（``/api/claude-sessions``
+    背后那个页面）把带参数的命令也算作"没有开口第一句"，而它拿这个值判这场会话是人开
+    的还是 agent 开的——动它就动了那页的会话分类。所以两边只在这一条上分开：那边管分类，
+    这边管左栏那一行叫什么名字。光杆命令与命令输出的处置两边完全一致。
+    """
+    body = txt.strip()
+    name = _COMMAND_NAME_RE.search(body)
+    if name:
+        args = _COMMAND_ARGS_RE.search(body)
+        written = (args.group(1) if args else "").strip()
+        if not written:
+            return None
+        return f"{name.group(1).strip()} {written}".strip()
+    if _COMMAND_ECHO.match(body):
+        return None
+    return body
+
+
 def _extract(path: Path, sid: str, mtime: float) -> SessionSummary | None:
     """读一个会话文件，取出左栏要的字段。读不动返回 None。
 
     取值规则逐条对齐 ``claude_sessions._scan_file()``：``slug``/``cwd``/起始时刻/开口第一
     句取**首个**命中，``custom-title``/``ai-title`` 取**末个**（后写的覆盖先写的）。
+    唯一一处刻意不同是带参数的斜杠命令算不算"开口第一句"，理由写在 ``_first_user_text``。
     """
     slug: str | None = None
     custom_title: str | None = None
@@ -490,8 +531,8 @@ def _extract(path: Path, sid: str, mtime: float) -> SessionSummary | None:
         if first_user is None and rtype == "user" and not record.get("isMeta"):
             msg = record.get("message") or {}
             txt = _extract_text(msg.get("content", ""))
-            if txt and txt.strip() and not _COMMAND_ECHO.match(txt):
-                first_user = txt.strip()
+            if txt and txt.strip():
+                first_user = _first_user_text(txt)
         if cwd is not None and first_ts is not None and first_user is not None:
             break
 

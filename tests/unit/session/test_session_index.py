@@ -143,6 +143,29 @@ class Test取到的字段:
         assert full is not None
         assert summary.first_user == full["first_user"]
 
+    def test_带参数的斜杠命令就是人打的那句话(self, tmp_path: Path) -> None:
+        """``/goal 两个问题…`` 里的参数是人自己写的话，壳拆开还给他。
+
+        整条跳过的代价是这场会话没有"开口第一句"，左栏那一行退到最后一档写会话编号——
+        人刚开的会话在清单里没有名字，而他明明打了一整句话。
+        """
+        root = tmp_path / "projects"
+        records = [
+            {"type": "user", "cwd": "/tmp/x", "timestamp": "2026-07-29T10:00:00.000Z",
+             "message": {"content": "<command-name>/goal</command-name>\n"
+                                    "            <command-message>goal</command-message>\n"
+                                    "            <command-args>左下角额度那行字太大了</command-args>"}},
+            {"type": "user", "message": {"content": "<local-command-stdout>Goal set: …"
+                                                    "</local-command-stdout>"}},
+        ]
+        _write_session(root, "proj", "sid-6b", records)
+
+        (summary,) = session_index.list_session_summaries(
+            projects_root=root, cache_file=tmp_path / "index.json"
+        )
+
+        assert summary.first_user == "/goal 左下角额度那行字太大了"
+
 
 class Test缓存失效:
     def test_追加一行后拿到的是新值(self, tmp_path: Path) -> None:
