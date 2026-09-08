@@ -59,6 +59,100 @@ export const HOT_WINDOW_MS = 15 * 60_000;
  */
 export const AWAIT_REPLY_CEILING_MS = 180_000;
 
+/**
+ * 点了发送之后，那句话在成为新一轮之前会经过的两档。
+ *
+ * - `sent`（已发送）：请求出了门，会话记录里还找不到它。**这一档撤不回**——话已经交给
+ *   服务端了，所以它不该继续待在输入框里装作还没发。
+ * - `queued`（已入队列）：它已经进了这场会话，但 agent 那一轮还在跑，引擎把它挂在队列
+ *   上，还没轮到它成为 prompt。
+ *
+ * 成为真正的一轮之后（用户发言落盘，或那张插话卡的下场从"还在队列里"变成"已并入"
+ * 「已发出」）它就退出这个清单——那时它在记录流里有自己的位置，不需要信封替它站着。
+ */
+export type OutboundState = 'sent' | 'queued';
+
+/** 一条已经点了发送、但还没成为新一轮的消息。信封区照着它画。 */
+export interface OutboundMessage {
+  id: string;
+  /** 投出去的原文（已 trim）。纯附件时为空串。 */
+  text: string;
+  /** 随它一起发的图片加文档共几个。 */
+  attachments: number;
+  /** 点发送那一刻。用来跟记录的时刻比对，也用来判它是不是等太久了。 */
+  at: number;
+  state: OutboundState;
+}
+
+/** 这条记录是不是那条消息的落地形态，以及落成了哪一种。 */
+type Landing = 'say' | 'queued' | 'drained';
+
+/** 比对前把空白抹平：档案里那份带着换行与缩进，人打的那份没有。 */
+function flatten(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * 斜杠命令落进档案时不是原样，认不出这层壳，那句话就永远等不到落地。
+ *
+ * 人在输入框里打的是 `/goal 把 webUI 的日历挪到底部`，写进会话档案的却是：
+ *
+ * ```
+ * <command-name>/goal</command-name>
+ * <command-message>goal</command-message>
+ * <command-args>把 webUI 的日历挪到底部</command-args>
+ * ```
+ *
+ * 两份字面上毫无关系，于是信封一直停在"已发送"那一档，直到等满上限才自己撤掉——人看见
+ * agent 明明已经在干活了，输入区上方那句话却还挂着说没进去。
+ *
+ * 这里把壳拆回人打的那一句：命令名加参数。不是命令回显就返回 null，走原样比对那条路。
+ */
+function unwrapCommandEcho(text: string): string | null {
+  const name = text.match(/<command-name>([\s\S]*?)<\/command-name>/);
+  if (!name) return null;
+  const args = text.match(/<command-args>([\s\S]*?)<\/command-args>/);
+  return flatten(`${name[1]} ${args?.[1] ?? ''}`);
+}
+
+/**
+ * 拿一条记录对一条待落地的消息。对不上返回 null。
+ *
+ * 纯附件（`text` 为空）那一路只能按时刻认：正文是服务端替它写的（"请查看以下附件。"
+ * 加一串落盘路径），前端手上没有那份原文，比对无从下手。
+ */
+function landingOf(r: WorkbenchRecord, msg: OutboundMessage): Landing | null {
+  if (r.ts < msg.at - 1_000) return null;
+  const mine = flatten(msg.text);
+  if (r.kind === 'user.say') {
+    if (!mine) return 'say';
+    const text = typeof r.payload.text === 'string' ? r.payload.text : '';
+    // 附件的路径是服务端往后接的，所以比的是"开头是不是那一句"，不是整句相等。
+    if (flatten(text).startsWith(mine)) return 'say';
+    const unwrapped = unwrapCommandEcho(text);
+    return unwrapped && unwrapped.startsWith(mine) ? 'say' : null;
+  }
+  if (r.kind === 'context.inject' && r.payload.channel === 'queued_command') {
+    const body = typeof r.payload.body === 'string' ? r.payload.body : '';
+    if (mine && flatten(body) !== mine) return null;
+    // 插话卡自己带着下场：还在队列里的才算"已入队列"，已并入或已发出的那一轮已经开始，
+    // 信封该退场了。
+    return r.payload.queue_state === 'pending' ? 'queued' : 'drained';
+  }
+  return null;
+}
+
+/** 这条消息在当前这批记录里落到哪一档。终局（成为一轮）优先于"还在队列里"。 */
+function landingIn(records: WorkbenchRecord[], msg: OutboundMessage): Landing | null {
+  let seen: Landing | null = null;
+  for (const r of records) {
+    const landing = landingOf(r, msg);
+    if (landing === 'say' || landing === 'drained') return landing;
+    if (landing) seen = landing;
+  }
+  return seen;
+}
+
 /** 这几种形态出现，就算 agent 真的开口了。用户自己那句话不算。 */
 const AGENT_ACTIVITY: ReadonlySet<RecordKind> = new Set<RecordKind>([
   'agent.say',
@@ -144,8 +238,20 @@ export interface WorkbenchRecordsState {
    * 就是给那句"在等"用的。
    */
   awaitingAgent: boolean;
-  /** 告诉记录流「刚发出去一句」：进快节拍、举起"在等 agent 开口"。 */
-  markSent: (text: string) => void;
+  /**
+   * 已经点了发送、还没成为新一轮的那些消息，按投出去的先后排。
+   *
+   * 输入区拿它画信封：`sent` 是"已发送、还没进这场会话"，`queued` 是"已经进来了、
+   * 正排在队列上"。输入框在点发送那一刻就交还给人，这份清单是那句话此后唯一的去处——
+   * 没有它，人只会以为自己那句话卡住了没发出去。
+   */
+  outbound: OutboundMessage[];
+  /**
+   * 告诉记录流「刚发出去一句」：进快节拍、举起"在等 agent 开口"、给它开一个信封。
+   *
+   * 返回那个信封的编号。发失败时把编号交回 `clearSent`，撤掉的就只是这一单。
+   */
+  markSent: (text: string, attachments?: number) => string;
   /**
    * 那句话**确实落进这场会话**的时刻（毫秒，没送达时为 null）。
    *
@@ -155,8 +261,20 @@ export interface WorkbenchRecordsState {
    * 输入框却还塞着同一段字、按钮还转着圈，只能切走再切回来才恢复。
    */
   deliveredAt: number | null;
-  /** 那句话根本没发出去，把"在等"撤掉。挂着一句假的比不提示还糟。 */
-  clearSent: () => void;
+  /**
+   * 那句话根本没发出去：撤掉"在等"，并把它的信封收走。
+   *
+   * 给了编号就只收那一个信封，不给就全收——挂着一个永远送不到的信封，比不提示还糟。
+   */
+  clearSent: (id?: string) => void;
+  /**
+   * 那一单的发送接口回来了，把它的信封收掉。
+   *
+   * 那条接口一直等到**这一轮说完**才返回，所以它一回来，那句话必定早就进了这场会话——
+   * 认不认得出它在流里长什么样，都不该再替它站着。这是比对之外的第二道保险：记录的形状
+   * 将来还会变（斜杠命令就变过一次），比对总有认不出的那天，而这一条不依赖任何形状。
+   */
+  settleSent: (id?: string) => void;
 }
 
 export async function fetchWorkbenchRecords(
@@ -226,8 +344,10 @@ export function useWorkbenchRecords(
   const [pace, setPace] = useState(0);
   // 那句话是什么时候投出去的。等到 agent 真有动静、或者等满上限就清掉。
   const [awaitingSince, setAwaitingSince] = useState<number | null>(null);
-  // 还没在流里露面的那句话。露面即"送达"，输入区据此放行。
-  const pendingSent = useRef<{ text: string; at: number } | null>(null);
+  // 已发出、还没成为新一轮的那些消息。输入区照着它画信封。
+  const [outbound, setOutbound] = useState<OutboundMessage[]>([]);
+  // 信封编号用单调自增：同一毫秒连发两条不会撞。
+  const outboundSeq = useRef(0);
   const [deliveredAt, setDeliveredAt] = useState<number | null>(null);
 
   const loadTail = useCallback(async (sid: string) => {
@@ -284,52 +404,81 @@ export function useWorkbenchRecords(
     await loadTail(sessionId);
   }, [sessionId, loadTail]);
 
-  const markSent = useCallback((text: string) => {
+  const markSent = useCallback((text: string, attachments = 0) => {
     const now = Date.now();
     hotUntil.current = now + HOT_WINDOW_MS;
     fastUntil.current = now + FAST_POLL_WINDOW_MS;
     setAwaitingSince(now);
     setDeliveredAt(null);
-    pendingSent.current = { text: text.trim(), at: now };
+    const id = `out-${now}-${outboundSeq.current++}`;
+    setOutbound((prev) => [...prev, { id, text: text.trim(), attachments, at: now, state: 'sent' }]);
     setPace((n) => n + 1);
+    return id;
   }, []);
 
-  const clearSent = useCallback(() => {
+  const clearSent = useCallback((id?: string) => {
     fastUntil.current = 0;
-    pendingSent.current = null;
+    setOutbound((prev) => (id ? prev.filter((m) => m.id !== id) : []));
     setAwaitingSince(null);
     setPace((n) => n + 1);
   }, []);
 
+  const settleSent = useCallback((id?: string) => {
+    if (!id) return;
+    setOutbound((prev) => prev.filter((m) => m.id !== id));
+  }, []);
+
   /**
-   * 刚投出去那句话，在流里露面了没有。
+   * 刚投出去那些话，在流里走到哪一档了。
    *
    * 两种露面方式都算，因为**投进去的话本来就有两种落地形态**：agent 当时闲着，它成为
    * 一条用户发言；agent 正忙着，它成为一张插话卡（那种情况下会话记录里根本不会有用户
    * 发言，只认前一种会让插话永远等不到放行）。
    *
+   * 后一种再分两步：卡上写着"还在队列里"就是**已入队列**，信封留着并换成排队那一档；
+   * 写着已并入或已发出，说明它已经成了那一轮的一部分，信封退场。
+   *
    * 比时刻是必须的：同一句话重发一遍时，不比时刻会让上一轮那条老记录当场"送达"。
    */
   useEffect(() => {
-    const pending = pendingSent.current;
-    if (!pending) return;
-    const landed = records.some((r) => {
-      if (r.ts < pending.at - 1_000) return false;
-      if (r.kind === 'user.say') {
-        const text = typeof r.payload.text === 'string' ? r.payload.text.trim() : '';
-        return Boolean(pending.text) && text.startsWith(pending.text);
+    if (!outbound.length) return;
+    const next = outbound.map((msg) => {
+      const landing = landingIn(records, msg);
+      if (landing === 'say' || landing === 'drained') return null;
+      if (landing === 'queued' && msg.state !== 'queued') {
+        return { ...msg, state: 'queued' as const };
       }
-      if (r.kind === 'context.inject' && r.payload.channel === 'queued_command') {
-        const body = typeof r.payload.body === 'string' ? r.payload.body.trim() : '';
-        return body === pending.text;
-      }
-      return false;
+      return msg;
     });
-    if (landed) {
-      pendingSent.current = null;
-      setDeliveredAt(Date.now());
-    }
-  }, [records]);
+    // 一个都没变就别回写：这个效应看着 outbound，回写同一份内容会把自己叫醒一遍。
+    if (next.every((m, i) => m === outbound[i])) return;
+    setOutbound(next.filter((m): m is OutboundMessage => m !== null));
+    // 走到这里说明至少有一条真的进了这场会话——输入区的发送按钮据此放回去。
+    setDeliveredAt(Date.now());
+  }, [records, outbound]);
+
+  /**
+   * 「已发送」等太久就把信封撤掉。
+   *
+   * 服务端那次投喂最多等 180 秒，到点还没在流里露过面，多半是它以一种对不上的形态落了
+   * 盘（比如纯附件那一路正文由服务端代写）。挂着一个永不消失的信封，比不提示还糟。
+   * 「已入队列」不设这道闸——排队本来就可能排很久，它的退场信号是那一轮说完。
+   */
+  useEffect(() => {
+    const waiting = outbound.filter((m) => m.state === 'sent');
+    if (!waiting.length) return;
+    const due = Math.min(...waiting.map((m) => m.at + AWAIT_REPLY_CEILING_MS));
+    const timer = setTimeout(
+      () => {
+        const now = Date.now();
+        setOutbound((prev) =>
+          prev.filter((m) => m.state !== 'sent' || now < m.at + AWAIT_REPLY_CEILING_MS)
+        );
+      },
+      Math.max(0, due - Date.now())
+    );
+    return () => clearTimeout(timer);
+  }, [outbound]);
 
   // 等到 agent 真有动静就把"在等"撤掉。判据是**记录形态**，不是"记录变多了"——发完话
   // 重拉一次，多出来的第一条是用户自己刚说的那句，那不算 agent 开了口。
@@ -356,7 +505,7 @@ export function useWorkbenchRecords(
     setError(null);
     setAwaitingSince(null);
     setDeliveredAt(null);
-    pendingSent.current = null;
+    setOutbound([]);
     fastUntil.current = 0;
     if (!sessionId) return;
     void loadTail(sessionId);
@@ -454,6 +603,9 @@ export function useWorkbenchRecords(
       const data = msg.data as Record<string, unknown> | undefined;
       if (!data || data.session_id !== sidRef.current) return;
       hotUntil.current = Date.now() + HOT_WINDOW_MS;
+      // 这一轮说完，队列就排到头了：还挂着"已入队列"的信封该退场。那句话此刻要么
+      // 已经被并进刚说完的这一轮，要么正作为下一轮开跑，两种下场都在记录流里有位置。
+      setOutbound((prev) => prev.filter((m) => m.state !== 'queued'));
     };
 
     const client = getWebSocketClient();
@@ -475,8 +627,10 @@ export function useWorkbenchRecords(
     loadOlder,
     reload,
     awaitingAgent: awaitingSince !== null,
+    outbound,
     deliveredAt,
     markSent,
     clearSent,
+    settleSent,
   };
 }

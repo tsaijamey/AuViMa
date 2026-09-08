@@ -31,16 +31,19 @@
       "loading": "Loading..."
     },
     "appearance": {
-      "trigger": "Appearance and status",
-      "label": "Appearance",
-      "group": "Light or dark",
       "light": "Light",
       "dark": "Dark"
     },
-    "engine": {
-      "label": "Engine",
-      "running": "Running",
-      "idle": "Idle"
+    "usage": {
+      "label": "Subscription usage",
+      "weekAll": "All models",
+      "weekModel": "Model",
+      "session": "5-hour",
+      "weekAllLong": "This week, all models",
+      "weekModelLong": "This week, this model",
+      "sessionLong": "Current 5-hour window",
+      "tooltip": "{{name}}: {{percent}}% used",
+      "tooltipReset": "{{name}}: {{percent}}% used · resets {{reset}}"
     }
   },
   "tokenCalendar": {
@@ -450,8 +453,8 @@
       "about": "About"
     },
     "tabDesc": {
-      "capability": "Current state of static rules and lightweight ai",
-      "general": "Authentication and working directory",
+      "capability": "Current state of static rules and LightAgent",
+      "general": "Authentication and account profiles",
       "channels": "Task ingestion channels",
       "resources": "Official commands & skills sync",
       "appearance": "Language and behavior",
@@ -459,7 +462,7 @@
       "about": "Version and license"
     },
     "capability": {
-      "intro": "frago injects guidance into the agent on every prompt submission, in two layers: static rules are always in effect, while lightweight ai only exists once a model profile is configured. Below is what each layer is actually doing right now.",
+      "intro": "frago injects guidance into the agent on every prompt submission, in two layers: static rules are always in effect, while LightAgent only exists once a model profile is configured. Below is what each layer is actually doing right now.",
       "loadFailed": "Failed to read prompting capability status.",
       "saveFailed": "The switch was not saved; the configuration is unchanged.",
       "static": {
@@ -471,7 +474,7 @@
         "noConfigNeeded": "This layer needs no configuration and consumes no model quota."
       },
       "ai": {
-        "name": "Lightweight ai",
+        "name": "LightAgent",
         "lede": "On every prompt submission, the last few turns of the conversation are sent to a cheap model along with the rule, book, and knowledge-domain indexes, which returns one line of guidance to inject.",
         "unknownModel": "unknown model",
         "unnamedProfile": "unnamed profile",
@@ -495,10 +498,10 @@
           "not_configured": "Configure a model profile",
           "no_key": "Add an api key"
         },
-        "switch": "Enable lightweight ai",
+        "switch": "Enable LightAgent",
         "switchDesc": "When off, frago no longer calls a model for guidance; static rules keep working.",
         "persistence": "The switch is written to <c>hook_review.enabled</c> in <c>~/.frago/config.json</c>, the same field the engine reads; a missing section counts as on.",
-        "envOff": "The environment variable <c>FRAGO_REVIEW=off</c> is in effect and overrides this switch: lightweight ai will not run in this environment, and the switch above has no effect for now."
+        "envOff": "The environment variable <c>FRAGO_REVIEW=off</c> is in effect and overrides this switch: LightAgent will not run in this environment, and the switch above has no effect for now."
       }
     },
     "general": {
@@ -514,8 +517,6 @@
       "haikuModel": "Haiku Model",
       "saveConfiguration": "Save Configuration",
       "edit": "Edit",
-      "workingDirectory": "Working Directory",
-      "open": "Open",
       "confirmSwitch": "Confirm Switch to Official API",
       "confirmSwitchDesc": "This will remove your custom API configuration",
       "confirm": "Confirm",
@@ -535,7 +536,6 @@
       "leaveEmptyToKeep": "Leave empty to keep existing key",
       "confirmSwitchBtn": "Confirm Switch",
       "failedToLoadConfig": "Failed to load configuration",
-      "failedToOpenDir": "Failed to open directory",
       "failedToOpenVSCode": "Failed to open in VSCode",
       "manageProfiles": "Manage Profiles",
       "authenticationStatus": "Authentication Status",
@@ -543,9 +543,10 @@
       "usingCustomApi": "Using Custom API Endpoint",
       "endpoint": "Endpoint",
       "model": "Model",
-      "openInFileManager": "Open in file manager",
+      "dangerZone": "Danger zone",
       "claudeSettingsFile": "Claude Code settings file",
       "claudeSettingsFileDesc": "This is Claude Code's own configuration, not frago's working directory.",
+      "claudeSettingsFileWarning": "frago registers its hooks in this file. A broken edit can stop Claude Code from starting and silently disable every frago hook. Change it only if you know exactly what you are editing.",
       "openInVSCode": "Open in VSCode"
     },
     "profiles": {
@@ -1043,7 +1044,6 @@
       "pinnedHeader": "Pinned",
       "restHeader": "Everything else",
       "summary": "{{total}} sessions · Claude Code {{cc}} · opencode {{oc}} · codex {{cx}}",
-      "launching": "Starting {{name}}, waiting for it to report a session id…",
       "pinnedToastCollapsed": "Pinned — it's in the collapsed pinned section",
       "copied": "Resume command copied",
       "copyFailed": "Copy failed",
@@ -1237,7 +1237,11 @@
       "send": "Send",
       "sending": "Sending",
       "addAttachment": "Add an image or a document",
-      "removeFile": "Remove {{name}}"
+      "removeFile": "Remove {{name}}",
+      "sent": "Sent",
+      "queued": "Queued",
+      "attachmentsOnly": "(attachments only, no text)",
+      "outboundAttachments": "with {{n}} attachment(s)"
     },
     "newSession": {
       "title": "New session",
@@ -1274,6 +1278,20 @@
       "launchFailed": "This one didn't start",
       "imageUnreadable": "Couldn't read the image",
       "sendFailed": "The message didn't go out (HTTP {{status}})"
+    },
+    "launch": {
+      "title": "Starting a {{name}} session",
+      "failedTitle": "This one didn't start",
+      "firstMessage": "The first message, already sent",
+      "stepClaim": "{{name}} reports the session id",
+      "stepFirstRecord": "It writes its first record",
+      "hint": "This panel gives way to the record stream once the session is up — usually a few seconds.",
+      "failed": "Didn't start: {{reason}}",
+      "dismiss": "Dismiss",
+      "railTitle": "New session",
+      "railClaiming": "Starting {{name}}, waiting for its id",
+      "railWarming": "{{name}} is up, waiting for its first record",
+      "railFailed": "Didn't start — see the middle column"
     }
   }
 }

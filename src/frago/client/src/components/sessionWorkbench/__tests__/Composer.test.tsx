@@ -179,7 +179,7 @@ describe('Composer 输入区', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('发送失败：文本与图片原样留着，说明原因并给重试', async () => {
+  it('发送失败：输入框还空着，就把这一单原样退回去，说明原因并给重试', async () => {
     fetchMock.mockImplementationOnce(async () => failResponse('send failed: tmux 会话没起来'));
     render(<Composer sessionId={SID} family="claude-code" onSent={NOOP} />);
 
@@ -280,7 +280,7 @@ describe('Composer 输入区', () => {
   });
 });
 
-describe('送达即放行：不许等整轮跑完才清输入框', () => {
+describe('点了发送，输入框当场空出来', () => {
   /** 一条永远不回来的发送请求：模拟"接口要等整整一轮才返回"。 */
   function stubHangingSend() {
     vi.stubGlobal(
@@ -289,25 +289,50 @@ describe('送达即放行：不许等整轮跑完才清输入框', () => {
     );
   }
 
-  it('话落进流里就清空输入框、把按钮放回去', async () => {
+  it('请求还挂着，输入框就已经空了——那句话撤不回，留在框里只会像没发出去', async () => {
     stubHangingSend();
-    const { rerender } = render(
-      <Composer sessionId={SID} family="claude-code" onSent={() => {}} deliveredAt={null} />
-    );
+    render(<Composer sessionId={SID} family="claude-code" onSent={() => {}} deliveredAt={null} />);
     const input = screen.getByTestId('composer-input') as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: '复制到 recipes 目录下' } });
     fireEvent.click(screen.getByTestId('composer-send'));
 
-    // 请求还挂着：按钮转圈、文字还在。人此刻已经能在流里看到自己那句话了。
-    await waitFor(() => expect(screen.getByTestId('composer-send').textContent).toContain('发送中'));
-    expect(input.value).toBe('复制到 recipes 目录下');
+    await waitFor(() => expect(input.value).toBe(''));
+    expect(screen.getByTestId('composer-send').textContent).toContain('发送中');
+  });
 
-    // 送达信号到——不必等接口返回。
+  it('送达信号到就把按钮放回去，不必等整轮跑完', async () => {
+    stubHangingSend();
+    const { rerender } = render(
+      <Composer sessionId={SID} family="claude-code" onSent={() => {}} deliveredAt={null} />
+    );
+    fireEvent.change(screen.getByTestId('composer-input'), { target: { value: '接着说' } });
+    fireEvent.click(screen.getByTestId('composer-send'));
+    await waitFor(() => expect(screen.getByTestId('composer-send').textContent).toContain('发送中'));
+
     rerender(
       <Composer sessionId={SID} family="claude-code" onSent={() => {}} deliveredAt={Date.now()} />
     );
-    await waitFor(() => expect(input.value).toBe(''));
-    expect(screen.getByTestId('composer-send').textContent).not.toContain('发送中');
+    await waitFor(() =>
+      expect(screen.getByTestId('composer-send').textContent).not.toContain('发送中')
+    );
+  });
+
+  it('出门那一刻就报出原文与附件数，好给它开一个信封', async () => {
+    stubHangingSend();
+    const onSendStart = vi.fn(() => 'out-1');
+    render(
+      <Composer
+        sessionId={SID}
+        family="claude-code"
+        onSent={() => {}}
+        onSendStart={onSendStart}
+      />
+    );
+    fireEvent.change(screen.getByTestId('composer-input'), { target: { value: '把日志翻出来' } });
+    await pasteImage();
+    fireEvent.click(screen.getByTestId('composer-send'));
+
+    await waitFor(() => expect(onSendStart).toHaveBeenCalledWith('把日志翻出来', 1));
   });
 
   it('放行之后人接着打的新内容，不许被上一单的返回抹掉', async () => {
@@ -323,11 +348,11 @@ describe('送达即放行：不许等整轮跑完才清输入框', () => {
     const input = screen.getByTestId('composer-input') as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: '第一句' } });
     fireEvent.click(screen.getByTestId('composer-send'));
+    await waitFor(() => expect(input.value).toBe(''));
 
     rerender(
       <Composer sessionId={SID} family="claude-code" onSent={() => {}} deliveredAt={Date.now()} />
     );
-    await waitFor(() => expect(input.value).toBe(''));
 
     fireEvent.change(input, { target: { value: '第二句还没发' } });
     await act(async () => {
@@ -335,5 +360,64 @@ describe('送达即放行：不许等整轮跑完才清输入框', () => {
       await Promise.resolve();
     });
     expect(input.value).toBe('第二句还没发');
+  });
+});
+
+describe('信封：已发送与已入队列是两副面孔', () => {
+  const WAITING = {
+    id: 'out-1',
+    text: '把 recipes 目录清一遍',
+    attachments: 0,
+    at: Date.now(),
+    state: 'sent' as const,
+  };
+
+  it('已发送：那句话摆在输入区上方等着，输入框是空的', () => {
+    render(
+      <Composer sessionId={SID} family="claude-code" onSent={NOOP} outbound={[WAITING]} />
+    );
+
+    const envelope = screen.getByTestId('composer-outbound');
+    expect(envelope.getAttribute('data-state')).toBe('sent');
+    expect(envelope.textContent).toContain('已发送');
+    expect(envelope.textContent).toContain('把 recipes 目录清一遍');
+    // 排队那一档才有的东西，这一档不许出现。
+    expect(screen.queryByTestId('composer-outbound-queue-dots')).toBeNull();
+  });
+
+  it('已入队列：同一个信封换一副更重的样子，并说出它在排队', () => {
+    render(
+      <Composer
+        sessionId={SID}
+        family="claude-code"
+        onSent={NOOP}
+        outbound={[{ ...WAITING, state: 'queued' }]}
+      />
+    );
+
+    const envelope = screen.getByTestId('composer-outbound');
+    expect(envelope.getAttribute('data-state')).toBe('queued');
+    expect(envelope.textContent).toContain('已入队列');
+    expect(screen.getByTestId('composer-outbound-queue-dots')).toBeTruthy();
+  });
+
+  it('纯附件那一单没有正文，信封照样说得清它是什么', () => {
+    render(
+      <Composer
+        sessionId={SID}
+        family="claude-code"
+        onSent={NOOP}
+        outbound={[{ ...WAITING, text: '', attachments: 2 }]}
+      />
+    );
+
+    const envelope = screen.getByTestId('composer-outbound');
+    expect(envelope.textContent).toContain('只有附件');
+    expect(envelope.textContent).toContain('2');
+  });
+
+  it('一条都没有就什么都不画——输入区上方不该无故多出一块', () => {
+    render(<Composer sessionId={SID} family="claude-code" onSent={NOOP} />);
+    expect(screen.queryByTestId('composer-outbound')).toBeNull();
   });
 });

@@ -466,11 +466,6 @@ export const updateAuthMethod = withMode(
   (authData: AuthUpdateRequest): Promise<MainConfigUpdateResponse> => pywebviewApi.updateAuthMethod(authData),
 );
 
-export const openWorkingDirectory = withMode(
-  (): Promise<ApiResponse> => httpApi.openWorkingDirectory(),
-  (): Promise<ApiResponse> => pywebviewApi.openWorkingDirectory(),
-);
-
 // ============================================================
 // Settings API - Recipe Secrets Management
 // ============================================================
@@ -677,22 +672,22 @@ export const openTutorial = withMode(
 );
 
 // ============================================================
-// Prompting Capability API (static rules + lightweight AI)
+// Prompting Capability API (static rules + LightAgent)
 // ============================================================
 
-export type { HookReviewStatus, LightweightAiStatus } from './client';
+export type { HookReviewStatus, LightAgentStatus } from './client';
 
 /**
  * pywebview mode has no backend for this, and guessing would be worse than
  * saying nothing: reporting "in effect" for a layer that may not be running is
  * exactly the silent-failure this panel exists to end. So it reports the
- * lightweight layer as unconfigured and leaves the rule count blank.
+ * LightAgent layer as unconfigured and leaves the rule count blank.
  */
 const HOOK_REVIEW_UNAVAILABLE: httpApi.HookReviewStatus = {
   enabled: true,
   env_off: false,
   static_rules: { available: true, count: null },
-  lightweight_ai: { status: 'not_configured', profile_name: null, model: null, detail: null },
+  lightagent: { status: 'not_configured', profile_name: null, model: null, detail: null },
 };
 
 export const getHookReviewStatus = withMode(
@@ -737,6 +732,8 @@ export type {
   PaSessionSendResponse,
   TokenCalendarResponse,
   TokenDayBucket,
+  ClaudeUsage,
+  ClaudeUsageBucket,
 } from './client';
 
 export const getClaudeSessions = withMode(
@@ -772,6 +769,20 @@ export const getTokenCalendar = withMode(
   (_month: string): Promise<httpApi.TokenCalendarResponse> => {
     throw new Error('Claude sessions API not available in pywebview mode');
   },
+);
+
+/** 桌面壳（pywebview）里没有这条服务，返回「答不出」而不是抛错——它不是错误状态。 */
+export const getClaudeUsage = withMode(
+  (): Promise<httpApi.ClaudeUsage> => httpApi.getClaudeUsage(),
+  (): Promise<httpApi.ClaudeUsage> =>
+    Promise.resolve({
+      available: false,
+      session: null,
+      week_all: null,
+      week_model: null,
+      checked_at: null,
+      error: 'unavailable-in-pywebview',
+    }),
 );
 
 export const getPaSessions = withMode(

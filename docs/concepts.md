@@ -129,7 +129,7 @@ layers:
   combined with user rules in `~/.frago/hook-rules.json`. They match events
   in milliseconds, need no configuration, and are always in effect. Manage
   them with `frago hook-rules`.
-- **Lightweight AI** — the last few turns of the conversation, together with
+- **LightAgent** — the last few turns of the conversation, together with
   the rule/book/domain indexes, are sent to a cheap model; its one-line
   verdict is injected back. This layer only exists once a model profile is
   configured. The switch lives in `~/.frago/config.json` →

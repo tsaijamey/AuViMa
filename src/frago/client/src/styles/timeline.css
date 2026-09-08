@@ -371,6 +371,36 @@
   background: var(--bg-hover);
 }
 
+/* 配方弹窗（创建 / 运行）的面板。此前这个类没有任何样式，面板既没背景也没宽度，
+   被最长的一行文字撑到多宽就多宽。定一个上限并居中，小窗口时留出边距。 */
+.recipe-run-modal {
+  width: 100%;
+  max-width: 560px;
+  max-height: calc(100vh - 48px);
+  margin: 0 16px;
+  padding: 20px 24px;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+}
+
+.recipe-run-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.recipe-run-modal-title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+}
+
 .sa-modal-body {
   flex: 1;
   overflow-y: auto;

@@ -4,7 +4,7 @@ frago 给 agent 的提示分两层，WebUI 需要把它们分开讲清楚：
 
 - **静态规则**：编译进 frago-core 二进制的路由规则，叠加 ``~/.frago/hook-rules.json``
   里的用户规则。不需要任何配置就生效，判定在毫秒级，因此状态恒为"已生效"。
-- **轻量 ai**：每次 UserPromptSubmit 把最近几轮会话连同规则索引交给一个便宜模型，
+- **LightAgent**：每次 UserPromptSubmit 把最近几轮会话连同规则索引交给一个便宜模型，
   换回一句该注入的提示。这一层要有可用的模型 profile 才存在。
 
 这里只做**读**与**开关落盘**。引擎侧怎么消费 ``hook_review.enabled`` 不在本模块
@@ -38,7 +38,7 @@ PROFILES_PATH = Path.home() / ".frago" / "profiles.json"
 # 不在表里的类型引擎直接报错，UI 必须跟着算"不可用"，不能乐观地显示已生效。
 _SUPPORTED_ENDPOINT_TYPES = {"deepseek", "custom", "anthropic", "official", "claude"}
 
-# 轻量 ai 的四种状态。UI 按这个枚举取文案，值保持英文标识符。
+# LightAgent 的四种状态。UI 按这个枚举取文案，值保持英文标识符。
 STATUS_ENABLED = "enabled"
 STATUS_DISABLED = "disabled"
 STATUS_NOT_CONFIGURED = "not_configured"
@@ -53,13 +53,13 @@ class HookReviewService:
         """两层提示能力此刻的实际状态。
 
         Returns:
-            ``{"enabled", "env_off", "static_rules", "lightweight_ai"}``
+            ``{"enabled", "env_off", "static_rules", "lightagent"}``
         """
         return {
             "enabled": HookReviewService._switch_enabled(),
             "env_off": os.environ.get("FRAGO_REVIEW", "").strip() == "off",
             "static_rules": HookReviewService._static_rules(),
-            "lightweight_ai": HookReviewService._lightweight_ai(),
+            "lightagent": HookReviewService._lightagent(),
         }
 
     @staticmethod
@@ -111,11 +111,11 @@ class HookReviewService:
             logger.warning("Failed to count hook rules: %s", e)
             return {"available": True, "count": None}
 
-    # ── 轻量 ai ───────────────────────────────────────────────────────
+    # ── LightAgent ───────────────────────────────────────────────────────
 
     @staticmethod
-    def _lightweight_ai() -> dict[str, Any]:
-        """轻量 ai 此刻处于四种状态里的哪一种。
+    def _lightagent() -> dict[str, Any]:
+        """LightAgent 此刻处于四种状态里的哪一种。
 
         判定顺序有意如此：**没配**压过**被关掉**——对一个还没配模型的用户，
         "去配一个"才是能动的那一步，告诉他"这是你自己关的"只会让人困惑。

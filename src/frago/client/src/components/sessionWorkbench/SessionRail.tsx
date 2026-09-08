@@ -39,12 +39,13 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Virtuoso } from 'react-virtuoso';
-import { ChevronDown, ChevronRight, Loader2, Pin, Plus, RefreshCw, Search, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, Mail, Pin, Plus, RefreshCw, Search, X } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
 import SessionItem, { resumeCommand } from './SessionItem';
 import NewSessionModal from './NewSessionModal';
 import { useSessionPins } from '@/hooks/useSessionPins';
-import { waitForSession } from '@/hooks/useAgentClients';
+import type { PendingLaunch } from '@/hooks/useAgentClients';
+import type { SessionLaunch } from '@/hooks/useSessionLaunch';
 import {
   DAY_OPTIONS,
   MIN_CONTENT_QUERY,
@@ -103,9 +104,30 @@ export interface SessionRailProps {
   state: WorkbenchSessionsState;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  /**
+   * 正在起、还没进清单的那一场。有值就在清单上方摆一张启动卡——从点完创建到这一行
+   * 真的长出来有将近十秒，那十秒里左栏什么都不说的话，人只会以为没建成。
+   */
+  launch?: SessionLaunch | null;
+  /** 建出去了。等编号、反复重取清单这些事由页面那边的启动状态接手，左栏不自己等。 */
+  onCreated?: (pending: PendingLaunch, text: string) => void;
+  /**
+   * 把没起来的那张卡收掉。
+   *
+   * 这个入口在左栏也要有：人在等的时候点开了别的会话，中栏就不再是那块启动面板，
+   * 那边的收起按钮他够不着，而没起来的卡不会自己消失。
+   */
+  onDismissLaunch?: () => void;
 }
 
-export default function SessionRail({ state, selectedId, onSelect }: SessionRailProps) {
+export default function SessionRail({
+  state,
+  selectedId,
+  onSelect,
+  launch = null,
+  onCreated,
+  onDismissLaunch,
+}: SessionRailProps) {
   const {
     sessions,
     visible,
@@ -218,7 +240,7 @@ export default function SessionRail({ state, selectedId, onSelect }: SessionRail
           type="button"
           onClick={() => setNewOpen(true)}
           data-testid="new-session"
-          className="flex h-8 w-full items-center gap-2 rounded-[8px] border border-border-color px-2.5 text-[13px] font-medium text-text-secondary transition-colors duration-200 hover:bg-bg-hover hover:text-text-primary"
+          className="flex h-8 w-full items-center gap-2 rounded-[8px] px-2.5 text-[13px] font-semibold bg-[var(--accent-primary)] text-[var(--text-on-accent)] transition-opacity duration-200 hover:opacity-90"
         >
           <Plus size={16} strokeWidth={1.5} className="shrink-0" />
           <span>{t('workbench.rail.newSession')}</span>
@@ -317,6 +339,55 @@ export default function SessionRail({ state, selectedId, onSelect }: SessionRail
           </p>
         ))}
       </div>
+
+      {/* 正在起的那一场先占一行。它摆在滚动区**外面**：这一行的意义是"你刚建的那场在
+          这儿"，滚下去看不见就等于没有。会话真进了清单它自己就消失，位置随即让给真那一行。 */}
+      {launch ? (
+        <div className="shrink-0 px-2 pt-2">
+          <div
+            data-testid="rail-launch"
+            data-phase={launch.phase}
+            className={`flex items-center gap-2 rounded-[8px] border px-2.5 py-2 ${
+              launch.phase === 'failed'
+                ? 'border-accent-error bg-accent-error-10'
+                : 'border-border-accent bg-accent-primary-10'
+            }`}
+          >
+            <Mail
+              size={14}
+              strokeWidth={2}
+              className={`shrink-0 ${
+                launch.phase === 'failed' ? 'text-accent-error' : 'text-accent-primary'
+              }`}
+            />
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-[12px] font-medium text-text-primary">
+                {launch.text || t('workbench.launch.railTitle')}
+              </span>
+              <span className="truncate text-[11px] text-text-muted">
+                {launch.phase === 'failed'
+                  ? t('workbench.launch.railFailed')
+                  : launch.phase === 'claiming'
+                    ? t('workbench.launch.railClaiming', { name: launch.agentName })
+                    : t('workbench.launch.railWarming', { name: launch.agentName })}
+              </span>
+            </div>
+            {launch.phase === 'failed' ? (
+              <button
+                type="button"
+                data-testid="rail-launch-dismiss"
+                onClick={() => onDismissLaunch?.()}
+                aria-label={t('workbench.launch.dismiss')}
+                className="shrink-0 rounded-[6px] p-0.5 text-text-muted hover:text-text-primary"
+              >
+                <X size={13} />
+              </button>
+            ) : (
+              <Loader2 size={13} className="shrink-0 animate-spin text-accent-primary" />
+            )}
+          </div>
+        </div>
+      ) : null}
 
       {/* 列表区：Virtuoso 只渲染视口内卡片。装载时给骨架屏占位，有数据才展示窗口化列表。 */}
       <div className="min-h-0 flex-1">
@@ -417,35 +488,13 @@ export default function SessionRail({ state, selectedId, onSelect }: SessionRail
         })}
       </div>
 
-      {/* 建完之后跳进那一场，并在随后的十几秒里反复重取清单——新会话的档案是 agent
-          自己写的，写完才扫得到，一次重取多半扫了个空。
-
-          编号不是当场就有的那两家（codex / opencode）先等它报编号：那段空窗如实说一句
-          "正在起"，NEVER 静默地什么都不发生——人点了创建、界面纹丝不动，只会再点一次，
-          于是起了两场。 */}
+      {/* 建完就交出去。等编号、反复重取清单、把中栏切过去，这些事由页面那边的启动状态
+          统一管（见 `useSessionLaunch`）——左栏自己等的话，那段等待只有左栏知道，中栏
+          仍是一片空白，而人点完创建看的正是中栏。 */}
       <NewSessionModal
         isOpen={newOpen}
         onClose={() => setNewOpen(false)}
-        onCreated={async (launch) => {
-          let sid = launch.session_id;
-          if (!sid) {
-            showToast(t('workbench.rail.launching', { name: launch.display_name }), 'info');
-            try {
-              sid = await waitForSession(launch.handle);
-            } catch (e) {
-              showToast(
-                e instanceof Error ? e.message : t('workbench.errors.launchFailed'),
-                'error'
-              );
-              return;
-            }
-          }
-          onSelect(sid);
-          for (const delay of [1500, 3000, 6000, 12000]) {
-            await new Promise((r) => setTimeout(r, delay));
-            await reload();
-          }
-        }}
+        onCreated={(pending, text) => onCreated?.(pending, text)}
       />
     </aside>
   );

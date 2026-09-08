@@ -516,28 +516,6 @@ async def open_path(request: OpenPathRequest) -> ApiResponse:
         return ApiResponse(status="error", error=str(e))
 
 
-@router.post("/settings/open-working-directory", response_model=ApiResponse)
-async def open_working_directory() -> ApiResponse:
-    """Open working directory in system file manager."""
-    try:
-        config = MainConfigService.get_config()
-        working_dir = config.get("working_directory", os.path.expanduser("~/.frago"))
-
-        # Expand user path
-        working_dir = os.path.expanduser(working_dir)
-
-        if not os.path.exists(working_dir):
-            return ApiResponse(status="error", error=f"Directory does not exist: {working_dir}")
-
-        SystemService.open_directory(working_dir)
-
-        return ApiResponse(status="ok", message="Working directory opened")
-    except subprocess.CalledProcessError as e:
-        return ApiResponse(status="error", error=f"Failed to open directory: {e}")
-    except Exception as e:
-        return ApiResponse(status="error", error=str(e))
-
-
 # ============================================================
 # VSCode Integration Endpoints
 # ============================================================
@@ -685,7 +663,7 @@ async def set_official_sync_enabled(request: OfficialSyncEnableRequest) -> ApiRe
 
 
 # ============================================================
-# Prompting Capability Endpoints (static rules + lightweight AI)
+# Prompting Capability Endpoints (static rules + LightAgent)
 # ============================================================
 
 
@@ -699,8 +677,8 @@ class StaticRulesResponse(BaseModel):
     count: Optional[int] = None
 
 
-class LightweightAiResponse(BaseModel):
-    """Lightweight AI layer status.
+class LightAgentResponse(BaseModel):
+    """LightAgent layer status.
 
     ``status`` is one of ``enabled`` / ``disabled`` / ``not_configured`` /
     ``no_key`` — see HookReviewService for how the four are told apart.
@@ -712,15 +690,15 @@ class LightweightAiResponse(BaseModel):
 
 
 class HookReviewStatusResponse(BaseModel):
-    """Both prompting layers, plus the lightweight AI switch."""
+    """Both prompting layers, plus the LightAgent switch."""
     enabled: bool
     env_off: bool = False
     static_rules: StaticRulesResponse
-    lightweight_ai: LightweightAiResponse
+    lightagent: LightAgentResponse
 
 
 class HookReviewEnableRequest(BaseModel):
-    """Flip the lightweight AI switch."""
+    """Flip the LightAgent switch."""
     enabled: bool
 
 
@@ -739,7 +717,7 @@ async def get_hook_review_status() -> HookReviewStatusResponse:
 async def set_hook_review_enabled(
     request: HookReviewEnableRequest,
 ) -> HookReviewStatusResponse:
-    """Turn the lightweight AI layer on or off.
+    """Turn the LightAgent layer on or off.
 
     Persists to ~/.frago/config.json so the engine picks it up on the next hook
     event — no environment variable, no restart. Returns the recomputed status

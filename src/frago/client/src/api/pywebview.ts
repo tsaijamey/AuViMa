@@ -247,11 +247,6 @@ export async function updateAuthMethod(
   return api.update_auth_method(authData);
 }
 
-export async function openWorkingDirectory(): Promise<ApiResponse> {
-  const api = await waitForPywebview();
-  return api.open_working_directory();
-}
-
 // ============================================================
 // Settings API - Recipe Secrets Management
 // ============================================================

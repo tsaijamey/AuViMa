@@ -238,6 +238,15 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
     virtual_os = VirtualOsLifecycleService.get_instance()
     await virtual_os.start()
 
+    # Start Claude Code subscription usage probe (10-minute cadence). Only this
+    # machine can answer "how much of the week is gone" — there is no API for it,
+    # the local claude binary is the source. Absent binary just means the rail
+    # bottom has nothing to draw.
+    from frago.server.services.claude_usage_service import ClaudeUsageService
+
+    claude_usage = ClaudeUsageService.get_instance()
+    await claude_usage.start()
+
     # Start hourly orphan recipe reaper (kills recipe daemon leftovers that no
     # supervisor owns any more — e.g. a HUD surviving a SIGKILLed server).
     from frago.server.services.orphan_recipe_cleanup_service import (
@@ -356,6 +365,7 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
     await ui_session_lifecycle.stop()
     await virtual_os.stop()
     await orphan_cleanup.stop()
+    await claude_usage.stop()
     await primary_agent.stop()
     await scheduler.stop()
     await version_service.stop()

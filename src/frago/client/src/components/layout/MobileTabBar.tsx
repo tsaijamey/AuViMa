@@ -8,9 +8,10 @@
  */
 
 import { useAppStore } from '@/stores/appStore';
-import { NAV_ITEMS, CONFIG_ITEM, isNavItemActive, type RailItem } from './Sidebar';
+import { NAV_ITEMS, isNavItemActive, type RailItem } from './Sidebar';
 
-const TAB_ITEMS: RailItem[] = [...NAV_ITEMS, CONFIG_ITEM];
+// settings 现在就排在 NAV_ITEMS 里（跟在 data 后面），这里不再另外接一项。
+const TAB_ITEMS: RailItem[] = NAV_ITEMS;
 
 export default function MobileTabBar() {
   const { currentPage, switchPage } = useAppStore();

@@ -76,6 +76,13 @@
   --accent-primary: #15b34d;
   --accent-primary-10: rgba(21, 179, 77, 0.12);
   --accent-primary-20: rgba(21, 179, 77, 0.22);
+
+  /* 额度条的三档。同一色相分三个深浅：它们是同一件事（我还剩多少）的三个尺度，
+     换三种色相会读成三件互不相干的事。中间那一档就是 logo 绿本身。 */
+  --usage-week-model: #0d7a34;
+  --usage-week-all: #15b34d;
+  --usage-session: #5ad884;
+  --usage-track: rgba(255, 255, 255, 0.08);
   --accent-success: #15b34d;
   --accent-warning: #e5a93c;
   --accent-warning-10: rgba(229, 169, 60, 0.14);
@@ -209,6 +216,12 @@
   --accent-primary: #0a8f33;
   --accent-primary-10: rgba(10, 143, 51, 0.1);
   --accent-primary-20: rgba(10, 143, 51, 0.2);
+
+  /* 白底上同样三档，整体压暗一级以保住对比度。 */
+  --usage-week-model: #05602a;
+  --usage-week-all: #0a8f33;
+  --usage-session: #3fb968;
+  --usage-track: rgba(0, 0, 0, 0.1);
   --accent-success: #0a8f33;
   --accent-warning: #a97609;
   --accent-warning-10: rgba(169, 118, 9, 0.12);
@@ -774,59 +787,73 @@ a:not(.btn):not(.nav-tab):not(.sidebar-github-link):hover {
   flex: 1;
 }
 
-/* 栏底：外观与运行状态。 */
+/* 栏底：额度与两颗深浅色按钮。原来这里挂的是一颗开浮层的「外观与状态」按钮，
+   浮层里的「引擎 · 空闲」报的是服务端有没有回 CPU 数字，对着屏幕的人用不上，已去掉。 */
 .rail-foot {
   position: relative;
   margin-top: 6px;
-  padding-top: 6px;
+  padding-top: 8px;
   border-top: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-/* 收起时状态点贴在图标右上角。展开时它仍在原处，不另开一行。 */
-.rail-item-badge {
-  position: absolute;
-  top: 6px;
-  left: 22px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--text-dim);
-  box-shadow: 0 0 0 2px var(--sidebar-bg);
+/* 三根条子。细到 3px 是因为它常驻在那里：它要能被瞥见，不该被读。 */
+.rail-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0 4px;
+  cursor: default;
 }
 
-.rail-item-badge.is-on {
-  background: var(--accent-primary);
+.rail-usage-track {
+  position: relative;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--usage-track);
+  overflow: hidden;
 }
 
-/* 外观浮层从栏底向右上方弹出。它是浮层，所以用 --bg-elevated 与投影。 */
-.rail-popover {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 4px;
-  /* 按内容定宽。字号跟着 --font-scale 走、文案跟着语言走，写死一个像素数迟早装不下。 */
-  width: max-content;
-  min-width: 240px;
-  max-width: min(320px, calc(100vw - 16px));
-  padding: 8px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  z-index: 60;
+.rail-usage-fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
 }
 
-.rail-popover-row {
+.rail-usage-track--model .rail-usage-fill {
+  background: var(--usage-week-model);
+}
+
+.rail-usage-track--all .rail-usage-fill {
+  background: var(--usage-week-all);
+}
+
+.rail-usage-track--session .rail-usage-fill {
+  background: var(--usage-session);
+}
+
+/* 展开时才写数字。收起时栏宽只有 40px，写不下，也不该写——细账在用量月历里。 */
+.rail-usage-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+.rail-usage-legend-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  height: 34px;
-  padding: 0 10px;
-  border-radius: var(--radius-sm);
+  gap: 6px;
+  min-width: 0;
 }
 
-/* 真挤不下时让标签先让位，分段控件与状态值保持完整——它们才是要点的东西。 */
-.rail-popover-row > .rail-popover-label {
+/* 名字先让位。栏宽是固定的，两者必有一个要挨切，挨切的该是能猜出来的那个。 */
+.rail-usage-legend-name {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -834,68 +861,67 @@ a:not(.btn):not(.nav-tab):not(.sidebar-github-link):hover {
   white-space: nowrap;
 }
 
-.rail-popover-row > .rail-seg,
-.rail-popover-row > .rail-popover-value {
+.rail-usage-legend-value {
   flex-shrink: 0;
-}
-
-.rail-popover-label {
-  font-size: var(--font-size-base);
+  font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
 }
 
-.rail-popover-value {
+.rail-usage-chip {
+  flex-shrink: 0;
+  width: 8px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.rail-usage-chip--model {
+  background: var(--usage-week-model);
+}
+
+.rail-usage-chip--all {
+  background: var(--usage-week-all);
+}
+
+.rail-usage-chip--session {
+  background: var(--usage-session);
+}
+
+/* 图标排。展开时一行三颗，收起时 40px 宽装不下三颗，自己折成一列。 */
+.rail-tools {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-}
-
-.rail-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--text-dim);
-}
-
-.rail-dot.is-on {
-  background: var(--accent-primary);
-}
-
-/* 两档分段控件：写的是「现在是哪一档」，不是「点了会变成什么」。 */
-.rail-seg {
-  display: flex;
+  flex-wrap: wrap;
   gap: 2px;
-  padding: 2px;
-  background: var(--bg-subtle);
-  border-radius: var(--radius-sm);
 }
 
-.rail-seg-item {
+.rail-tool {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
   border: none;
   background: transparent;
-  border-radius: 4px;
-  white-space: nowrap;
-  color: var(--text-muted);
-  font-size: var(--font-size-sm);
+  border-radius: var(--nav-item-radius);
+  color: var(--sidebar-item-unselected-text);
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
-.rail-seg-item:hover {
-  color: var(--text-primary);
+.rail-tool:hover {
+  background: var(--bg-hover);
+  color: var(--sidebar-item-selected-text);
 }
 
-.rail-seg-item.is-on {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  font-weight: var(--font-weight-medium);
-  box-shadow: var(--shadow-sm), 0 0 0 1px var(--border-color);
+/* 当前这一档：整颗换底，跟菜单的选中态同一个手法。 */
+.rail-tool--on {
+  background: var(--sidebar-item-selected-bg);
+  color: var(--sidebar-item-selected-text);
+}
+
+.rail-tool:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 /* === Bottom Tab Bar (phone-tier primary navigation) === */
@@ -1730,6 +1756,102 @@ a:not(.btn):not(.nav-tab):not(.sidebar-github-link):hover {
 
 .btn-danger:hover {
   filter: brightness(1.1);
+}
+
+/* Outlined danger: for an action that is legitimate but must not be taken
+   casually. btn-danger is a solid red block and reads as "press me"; this one
+   stays quiet until the pointer is on it. */
+.btn-danger-outline {
+  background: transparent;
+  color: var(--accent-error);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-error) 55%, transparent);
+}
+
+.btn-danger-outline:hover {
+  background: var(--accent-error);
+  color: white;
+  box-shadow: inset 0 0 0 1px var(--accent-error);
+}
+
+
+/* === Danger Zone ===
+   A framed region for settings that can break the machine if edited blind.
+   The whole block is outlined in the error color and carries its own header,
+   so the warning is visible before anything inside is read — the reason it is
+   a region and not a red button on an ordinary card. */
+.danger-zone {
+  border: 1px solid color-mix(in srgb, var(--accent-error) 45%, var(--border-color));
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  overflow: hidden;
+}
+
+.danger-zone-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--accent-error-10);
+  color: var(--accent-error);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent-error) 30%, transparent);
+}
+
+.danger-zone-body {
+  padding: 16px;
+}
+
+.danger-zone-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.danger-zone-text {
+  min-width: 0;
+}
+
+.danger-zone-title {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+}
+
+.danger-zone-desc {
+  margin-top: 2px;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+.danger-zone-warning {
+  margin-top: 6px;
+  font-size: var(--font-size-sm);
+  color: var(--accent-error);
+}
+
+.danger-zone-path {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .danger-zone-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .danger-zone-row .btn {
+    align-self: flex-start;
+  }
 }
 
 

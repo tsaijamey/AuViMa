@@ -23,7 +23,7 @@ frago 不绑定某一个 agent。Claude Code / codex / opencode / codebuddy 任�
 
 | 支柱 | 定义 | 对应命令 |
 |---|---|---|
-| 1. 会话伴侣：知道怎么做 | 两层。静态规则按事件精准注入，不用模型；轻量 ai 在提交前、收尾时、否决前三处各判一次。book 是被注入的内容 | frago-core、`frago hook-rules`、`frago book`、`~/.frago/hook/*` |
+| 1. 会话伴侣：知道怎么做 | 两层。静态规则按事件精准注入，不用模型；LightAgent 在提交前、收尾时、否决前三处各判一次。book 是被注入的内容 | frago-core、`frago hook-rules`、`frago book`、`~/.frago/hook/*` |
 | 2. 手和眼：在真实环境里操作 | 你登录着的浏览器、一块可录制的桌面、内置交付能力、内容查看 | `frago browser`、`frago desktop`、`frago apps`、`frago view` |
 | 3. 记忆与召回：三入口加交接 | 结论层、产物层、过程层各一个入口，外加待办把没做完的事交给下一场 | `frago def` / `frago <域名>`、`frago context`、`frago session search`、`frago todo` |
 | 4. 配方：跑通一次冻成代码 | agent 自己造的工具，确定性、零 token；模块化、可互调、可挂页面、可开放给指定的人、可调度、可守护、可上市场 | `frago recipe`、`frago daemon`、`frago market` |
@@ -31,7 +31,7 @@ frago 不绑定某一个 agent。Claude Code / codex / opencode / codebuddy 任�
 
 ### 1. 会话伴侣：知道怎么做
 
-定义：frago 不靠一份常驻的大文档告诉你规则，靠两层伴侣在事件发生的那一刻推给你。第一层是 frago-core 的静态规则（随包规则在 `~/.frago/hook/builtin-rules.json`，用户规则在 `~/.frago/hook-rules.json`），不用模型，零成本；第二层是轻量 ai，在你提交 prompt 前指路、收尾时判完没完、否决前复核，说明书在 `~/.frago/hook/{prompt,stop,veto}.md`。`frago book` 是这两层注入给你的内容本体。
+定义：frago 不靠一份常驻的大文档告诉你规则，靠两层伴侣在事件发生的那一刻推给你。第一层是 frago-core 的静态规则（随包规则在 `~/.frago/hook/builtin-rules.json`，用户规则在 `~/.frago/hook-rules.json`），不用模型，零成本；第二层是 LightAgent，在你提交 prompt 前指路、收尾时判完没完、否决前复核，说明书在 `~/.frago/hook/{prompt,stop,veto}.md`。`frago book` 是这两层注入给你的内容本体。
 
 命令：`frago hook-rules list/show/add`、`frago book <主题>`、`frago book --brief`。
 

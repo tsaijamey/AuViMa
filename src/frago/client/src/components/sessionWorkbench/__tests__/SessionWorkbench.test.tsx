@@ -553,6 +553,32 @@ describe('SessionRail 左栏', () => {
     expect(screen.getByTestId('status-filter-all').getAttribute('aria-pressed')).toBe('true');
   });
 
+  it('正在起的那一场先在清单上方占一行，直到它自己长出来', () => {
+    const launch = {
+      handle: 'launch-1',
+      agentName: 'codex',
+      cwd: '/Users/frago/Repos/frago',
+      text: '起一场新的',
+      sessionId: null,
+      phase: 'claiming' as const,
+      error: null,
+      at: Date.now(),
+    };
+    render(
+      <SessionRail state={railState()} selectedId={null} onSelect={NOOP} launch={launch} />
+    );
+
+    const card = screen.getByTestId('rail-launch');
+    expect(card.getAttribute('data-phase')).toBe('claiming');
+    expect(card.textContent).toContain('起一场新的');
+    expect(card.textContent).toContain('codex');
+  });
+
+  it('没有正在起的会话时，清单上方不多出任何东西', () => {
+    render(<SessionRail state={railState()} selectedId={null} onSelect={NOOP} />);
+    expect(screen.queryByTestId('rail-launch')).toBeNull();
+  });
+
   it('新建会话的入口在左栏顶部，点开是弹窗不是跳页', async () => {
     render(<SessionRail state={railState()} selectedId={null} onSelect={NOOP} />);
     expect(screen.queryByText('起始目录')).toBeNull();

@@ -32,8 +32,11 @@
  *
  * claude 接受由调用方指定编号，点完创建当场就知道这一场叫什么，直接跳进去。codex 与
  * opencode 的编号由它们自己分配，frago 要等会话起来后认领——那一段空窗如实说出来，
- * 由 `SessionRail` 拿着把手去等（见 `waitForSession`）。假装编号已经有了，界面会跳进
- * 一场并不存在的会话，人看到一片空记录流，以为刚开的会话丢了。
+ * 由 `useSessionLaunch` 拿着把手去等（见 `waitForSession`）。假装编号已经有了，界面会
+ * 跳进一场并不存在的会话，人看到一片空记录流，以为刚开的会话丢了。
+ *
+ * **这个对话框只管建，不管等。** 建出去之后它自己关掉，等待那一段由左栏的启动卡与中栏
+ * 的启动面板接手——对话框继续挂在屏幕上会挡住新会话本身，而人此刻要看的正是它。
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -53,7 +56,11 @@ import {
 interface NewSessionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreated: (launch: PendingLaunch) => void;
+  /**
+   * 建出去了。第二个参数是人刚打的那第一句话——对话框一关它就没别的地方存了，而接下来
+   * 那十几秒的等待要靠它告诉人"你在等的是哪一句"。
+   */
+  onCreated: (launch: PendingLaunch, text: string) => void;
 }
 
 interface DirChoice {
@@ -134,14 +141,15 @@ export default function NewSessionModal({ isOpen, onClose, onCreated }: NewSessi
     setError(null);
     setCreating(true);
     try {
+      const first = text.trim();
       const launch = await createSession({
         agent: chosen.agent_type,
         cwd: dir.trim(),
-        text: text.trim(),
+        text: first,
       });
       rememberLastAgent(chosen.agent_type);
       addRecentDirectory(dir.trim());
-      onCreated(launch);
+      onCreated(launch, first);
       onClose();
     } catch (e) {
       // 建不起来就**留在对话框里**并把话原样摆出来。关掉再弹一句提示，人打的那段话

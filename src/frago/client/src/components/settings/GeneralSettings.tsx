@@ -5,10 +5,10 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getMainConfig, getProfiles, getActivationTargets, deactivateProfile, openWorkingDirectory, checkVSCode, openConfigInVSCode } from '@/api';
+import { getMainConfig, getProfiles, getActivationTargets, deactivateProfile, checkVSCode, openConfigInVSCode } from '@/api';
 import type { ProfileItem } from '@/api';
 import type { MainConfig } from '@/types/pywebview';
-import { FolderOpen, Code } from 'lucide-react';
+import { Code, AlertTriangle } from 'lucide-react';
 import ProfileManager from '@/components/settings/ProfileManager';
 import AuthStatusCard from '@/components/settings/AuthStatusCard';
 import ActiveProfileCard from '@/components/settings/ActiveProfileCard';
@@ -101,17 +101,6 @@ export default function GeneralSettings({ openProfilesSignal = 0 }: GeneralSetti
     }
   };
 
-  const handleOpenWorkingDirectory = async () => {
-    try {
-      const result = await openWorkingDirectory();
-      if (result.status === 'error') {
-        setError(result.error || t('settings.general.failedToOpenDir'));
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('settings.general.failedToOpenDir'));
-    }
-  };
-
   const handleOpenInVSCode = async () => {
     try {
       const result = await openConfigInVSCode();
@@ -166,64 +155,38 @@ export default function GeneralSettings({ openProfilesSignal = 0 }: GeneralSetti
         />
       )}
 
-      {/* Working Directory Card */}
-      <div className="bg-[var(--bg-card)] rounded-lg border border-[var(--border-color)] p-4">
-        <div className="mb-3">
-          <label className="text-sm font-medium text-[var(--text-primary)]">
-            {t('settings.general.workingDirectory')}
-          </label>
-        </div>
-
-        <div className="flex gap-2 items-center">
-          <div className="flex-1 bg-[var(--bg-subtle)] rounded-md px-3 py-2 overflow-x-auto">
-            <span className="text-[var(--text-secondary)] font-mono text-sm whitespace-nowrap">
-              {config.working_directory_display || '~/.frago/projects'}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={handleOpenWorkingDirectory}
-            className="btn btn-ghost btn-sm flex items-center gap-1 shrink-0"
-            title={t('settings.general.openInFileManager')}
-          >
-            <FolderOpen size={16} />
-            {t('settings.general.open')}
-          </button>
-        </div>
-      </div>
-
-      {/* Claude Code settings file — its own card.
-          This edit button used to live in the working-directory card above,
-          where it read as "edit the working directory". It edits neither that
-          directory nor anything of frago's: it opens Claude Code's own settings
-          file, which is a separate subject and now says so. */}
+      {/* Claude Code settings file — set apart as a danger zone rather than
+          shown as one more ordinary card. frago registers its hook events into
+          this file by merge-write; a hand edit that breaks the JSON stops
+          Claude Code from starting and takes frago's hooks down with it. The
+          red frame is the whole point: an ordinary card invited people to
+          poke at it. */}
       {vscodeInstalled && (
-        <div className="bg-[var(--bg-card)] rounded-lg border border-[var(--border-color)] p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <label className="text-sm font-medium text-[var(--text-primary)]">
-                {t('settings.general.claudeSettingsFile')}
-              </label>
-              <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                {t('settings.general.claudeSettingsFileDesc')}
-              </p>
+        <section className="danger-zone">
+          <div className="danger-zone-header">
+            <AlertTriangle size={14} aria-hidden="true" />
+            {t('settings.general.dangerZone')}
+          </div>
+          <div className="danger-zone-body">
+            <div className="danger-zone-row">
+              <div className="danger-zone-text">
+                <p className="danger-zone-title">{t('settings.general.claudeSettingsFile')}</p>
+                <p className="danger-zone-desc">{t('settings.general.claudeSettingsFileDesc')}</p>
+                <p className="danger-zone-warning">{t('settings.general.claudeSettingsFileWarning')}</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleOpenInVSCode}
+                className="btn btn-sm btn-danger-outline shrink-0"
+                title={t('settings.general.openInVSCode')}
+              >
+                <Code size={16} />
+                {t('settings.general.edit')}
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={handleOpenInVSCode}
-              className="btn btn-ghost btn-sm flex items-center gap-1 shrink-0"
-              title={t('settings.general.openInVSCode')}
-            >
-              <Code size={16} />
-              {t('settings.general.edit')}
-            </button>
+            <div className="danger-zone-path">~/.claude/settings.json</div>
           </div>
-          <div className="bg-[var(--bg-subtle)] rounded-md px-3 py-2 overflow-x-auto">
-            <span className="text-[var(--text-secondary)] font-mono text-sm whitespace-nowrap">
-              ~/.claude/settings.json
-            </span>
-          </div>
-        </div>
+        </section>
       )}
 
       {/* Deactivate Confirmation Dialog */}

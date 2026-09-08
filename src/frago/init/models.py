@@ -119,7 +119,7 @@ class WebuiSessionsConfig(BaseModel):
 
 
 class HookReviewConfig(BaseModel):
-    """轻量 ai 这一层的开关（config.json -> hook_review）。
+    """LightAgent 这一层的开关（config.json -> hook_review）。
 
     这一层是 frago-core 在每次 UserPromptSubmit 时把最近几轮会话交给便宜模型、
     换回一句注入提示。它原本只能靠环境变量 `FRAGO_REVIEW=off` 关掉，而那条说明
@@ -221,7 +221,7 @@ class Config(BaseModel):
     # WebUI 会话集群生命周期配置 (spec 20260625-webui-session-lifecycle-mediator)
     webui_sessions: WebuiSessionsConfig = Field(default_factory=WebuiSessionsConfig)
 
-    # 轻量 ai 这一层开关。缺省 None = 段不存在 = 开（引擎侧同解，见
+    # LightAgent 这一层开关。缺省 None = 段不存在 = 开（引擎侧同解，见
     # HookReviewConfig 的注释）。NEVER 改成 default_factory —— 那会让每次
     # save_config 都给没碰过开关的用户凭空写一段。
     hook_review: HookReviewConfig | None = None

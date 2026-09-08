@@ -89,7 +89,7 @@ frago 在每次提交 prompt 时给 agent 注入提示，分两层：
 - **静态规则**——编译进 `frago-core` 二进制的路由规则，叠加
   `~/.frago/hook-rules.json` 里的用户规则。毫秒级匹配、不需要配置、常驻
   生效，用 `frago hook-rules` 管理。
-- **轻量 AI**——把最近几轮会话连同规则 / book / 经验域索引交给一个便宜
+- **LightAgent**——把最近几轮会话连同规则 / book / 经验域索引交给一个便宜
   模型，换回一句该注入的提示。这一层要有可用的模型 profile 才存在；开关
   在 `~/.frago/config.json` → `hook_review.enabled`（段缺失视为开），
   `FRAGO_REVIEW=off` 可作会话级压过。设置页会展示两层此刻的实际状态。

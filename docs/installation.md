@@ -138,7 +138,7 @@ winget install Microsoft.Edge
 2. **Auto-installs** — Node.js via nvm (macOS/Linux only), Claude Code via npm
 3. **Configures a model profile** — official endpoint or custom (DeepSeek, proxies, local models)
 4. **Installs the prompting engine** — deploys `frago-core` and registers hooks
-   (static rules + lightweight AI) for Claude Code and opencode
+   (static rules + LightAgent) for Claude Code and opencode
 5. **Installs resources** — slash commands to `~/.claude/commands/`, recipes to
    `~/.frago/recipes/`
 

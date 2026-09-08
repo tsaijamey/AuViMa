@@ -107,6 +107,8 @@ import type {
   PaSessionSendResponse,
   TokenCalendarResponse,
   TokenDayBucket,
+  ClaudeUsage,
+  ClaudeUsageBucket,
 } from '@/types/api';
 
 export type {
@@ -207,6 +209,8 @@ export type {
   PaSessionSendResponse,
   TokenCalendarResponse,
   TokenDayBucket,
+  ClaudeUsage,
+  ClaudeUsageBucket,
 };
 
 // API base URL - defaults to same origin in production, configurable for dev
@@ -583,10 +587,6 @@ export async function updateRecipeSecrets(recipeName: string, updates: Record<st
   });
 }
 
-export async function openWorkingDirectory(): Promise<ApiResponse> {
-  return fetchApi<ApiResponse>('/settings/open-working-directory', { method: 'POST' });
-}
-
 export async function openPath(path: string, reveal: boolean = false): Promise<ApiResponse> {
   return fetchApi<ApiResponse>('/settings/open-path', {
     method: 'POST',
@@ -595,11 +595,11 @@ export async function openPath(path: string, reveal: boolean = false): Promise<A
 }
 
 // ============================================================
-// Prompting Capability API (static rules + lightweight AI)
+// Prompting Capability API (static rules + LightAgent)
 // ============================================================
 
-/** Which of the four lightweight-AI states the backend resolved to. */
-export type LightweightAiStatus = 'enabled' | 'disabled' | 'not_configured' | 'no_key';
+/** Which of the four LightAgent states the backend resolved to. */
+export type LightAgentStatus = 'enabled' | 'disabled' | 'not_configured' | 'no_key';
 
 export interface HookReviewStatus {
   /** The switch as persisted in ~/.frago/config.json -> hook_review.enabled. */
@@ -612,8 +612,8 @@ export interface HookReviewStatus {
     /** null when the rule set could not be counted — render "in effect" with no number. */
     count: number | null;
   };
-  lightweight_ai: {
-    status: LightweightAiStatus;
+  lightagent: {
+    status: LightAgentStatus;
     profile_name: string | null;
     model: string | null;
     detail: string | null;
@@ -1094,6 +1094,13 @@ export async function sendPaSessionMessage(
     method: 'POST',
     body: JSON.stringify({ conv_key: convKey, text, images }),
   });
+}
+
+/**
+ * 本机 Claude Code 的订阅额度。读的是服务端每十分钟探一次的缓存，请求本身不跑 claude。
+ */
+export async function getClaudeUsage(): Promise<ClaudeUsage> {
+  return fetchApi<ClaudeUsage>('/system/claude-usage');
 }
 
 export async function getTokenCalendar(month: string): Promise<TokenCalendarResponse> {

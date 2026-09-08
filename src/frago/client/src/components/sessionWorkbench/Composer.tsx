@@ -9,23 +9,34 @@
  * 会话编号发过去不报错、而是凭空开一场新的 claude 会话。现在服务端按家族挑 driver
  * （`codex resume <id>` / `opencode -s <id>`），闸门没有存在的理由了。
  *
- * 四条纪律：
+ * 五条纪律：
  *
  * 1. **发完要能在中栏看到自己刚说的话。** 成功后调 `onSent`，页面把它接到记录流的
  *    `reload` 上，重新拉一次真记录。NEVER 在本地插一条假的——假的没有真实序号与出处，
  *    刷新就没了。
- * 2. **失败不清空。** 文本与已挂的图片原样留着，错误原因照抄服务端的说法，旁边给重试。
- * 3. **图片走粘贴、拖入、选文件三条路**，发送前显示缩略图，逐个可移除。
- * 4. **正在跟哪一家说话要看得见。** 三家的会话摆在同一份清单里，输入框的占位话直接
+ * 2. **点了发送，输入框当场空出来，那句话搬到上方的信封里。** 从前它留在输入框里等着
+ *    "送达"才清：撤又撤不回（话已经交出去了），看着又像没发成功。信封分两档，人一眼
+ *    分得清它走到哪了：
+ *
+ *    | 档 | 什么意思 | 长什么样 |
+ *    |---|---|---|
+ *    | 已发送 | 请求出了门，会话里还找不到它 | 描边信封，虚线框，弱色 |
+ *    | 已入队列 | 进了会话，但 agent 正忙，它排在队列上 | 填充信封（更大），实线框，品牌色，带排队指示 |
+ *
+ * 3. **失败不丢字。** 输入框还空着就把这一单原样退回去，人已经在打新的字就先收着，
+ *    重试重发的仍是原来那一份。错误原因照抄服务端的说法，旁边给重试。
+ * 4. **图片走粘贴、拖入、选文件三条路**，发送前显示缩略图，逐个可移除。
+ * 5. **正在跟哪一家说话要看得见。** 三家的会话摆在同一份清单里，输入框的占位话直接
  *    写出这一场是哪一家——发之前就知道这句话要交给谁。
  */
 
 import { useCallback, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FileText, Loader2, Plus, RotateCcw, SendHorizontal, X } from 'lucide-react';
+import { FileText, Loader2, Mail, Plus, RotateCcw, SendHorizontal, X } from 'lucide-react';
 import { useSendToSession, MAX_ATTACHMENTS } from '@/hooks/useSendToSession';
 import NoiseField from '@/components/ui/NoiseField';
 import { useWorkbenchLabels, type SessionFamily } from '@/hooks/useWorkbenchSessions';
+import type { OutboundMessage } from '@/hooks/useWorkbenchRecords';
 
 export interface ComposerProps {
   sessionId: string | null;
@@ -33,15 +44,21 @@ export interface ComposerProps {
   family: SessionFamily | null;
   /**
    * 请求**出门那一刻**调它。发送这条接口要等整整一轮才回来（上限 180 秒），"在跑"
-   * 这件事必须挂在出门那一刻，挂在回来那一刻等于整轮之内界面一动不动。
+   * 这件事必须挂在出门那一刻，挂在回来那一刻等于整轮之内界面一动不动。交回信封编号。
    */
-  onSendStart?: (text: string) => void;
-  /** 发送成功后重拉记录。页面接的是记录流的 `reload`。 */
-  onSent: () => void | Promise<void>;
-  /** 没发出去。页面据此把"在等 agent 开口"撤掉。 */
-  onSendFailed?: () => void;
-  /** 那句话确实落进会话的时刻。它一变就清空输入框、把按钮放回去。 */
+  onSendStart?: (text: string, attachments: number) => string | void;
+  /** 发送成功后重拉记录，并把这一单的信封编号交回去让页面收掉它。 */
+  onSent: (outboundId?: string) => void | Promise<void>;
+  /** 没发出去。页面据此撤掉这一单的信封与"在等 agent 开口"。 */
+  onSendFailed?: (outboundId?: string) => void;
+  /** 那句话确实落进会话的时刻。它一变就把发送按钮放回去。 */
   deliveredAt?: number | null;
+  /**
+   * 已经发出、还没成为新一轮的那些消息（页面接的是记录流的 `outbound`）。
+   *
+   * 输入框在点发送那一刻就空了，这里是那句话此后唯一看得见的去处。空数组就什么都不画。
+   */
+  outbound?: OutboundMessage[];
 }
 
 /**
@@ -73,6 +90,7 @@ export default function Composer({
   onSent,
   onSendFailed,
   deliveredAt,
+  outbound = [],
 }: ComposerProps) {
   const { t } = useTranslation();
   const { familyLabel } = useWorkbenchLabels();
@@ -236,6 +254,73 @@ export default function Composer({
                 </button>
               </span>
             ))}
+          </div>
+        ) : null}
+
+        {/* 信封区：已经点了发送、还没成为新一轮的那些话在这儿等着。
+            两档的分野是**它进没进这场会话**，不是"发了多久"：
+            已发送＝请求出了门、会话里还找不到它；已入队列＝进来了但 agent 正忙，
+            引擎把它挂在队列上。后一档在前一档的形态上加重：信封填实、放大、换成品牌色，
+            再补一行会跳的点表示还在排。 */}
+        {outbound.length ? (
+          <div className="flex flex-col gap-1.5">
+            {outbound.map((msg) => {
+              const queued = msg.state === 'queued';
+              return (
+                <div
+                  key={msg.id}
+                  data-testid="composer-outbound"
+                  data-state={msg.state}
+                  className={`flex items-center gap-2.5 rounded-[10px] px-3 py-2 ${
+                    queued
+                      ? 'border border-border-accent bg-accent-primary-10'
+                      : 'border border-dashed border-border-color bg-bg-subtle'
+                  }`}
+                >
+                  {queued ? (
+                    <span className="flex h-[24px] w-[24px] shrink-0 items-center justify-center rounded-[8px] bg-accent-primary text-[var(--text-on-accent)]">
+                      <Mail size={15} strokeWidth={2} />
+                    </span>
+                  ) : (
+                    <Mail
+                      size={15}
+                      strokeWidth={1.5}
+                      className="shrink-0 animate-pulse text-text-muted"
+                    />
+                  )}
+                  <span
+                    className={`shrink-0 text-[11px] font-medium ${
+                      queued ? 'text-accent-primary' : 'text-text-muted'
+                    }`}
+                  >
+                    {t(queued ? 'workbench.composer.queued' : 'workbench.composer.sent')}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[12px] text-text-secondary">
+                    {msg.text || t('workbench.composer.attachmentsOnly')}
+                  </span>
+                  {msg.attachments ? (
+                    <span className="shrink-0 text-[11px] text-text-muted">
+                      {t('workbench.composer.outboundAttachments', { n: msg.attachments })}
+                    </span>
+                  ) : null}
+                  {queued ? (
+                    <span
+                      aria-hidden
+                      data-testid="composer-outbound-queue-dots"
+                      className="flex shrink-0 items-center gap-[3px]"
+                    >
+                      {[0, 1, 2].map((i) => (
+                        <span
+                          key={i}
+                          className="h-[3px] w-[3px] animate-pulse rounded-full bg-accent-primary"
+                          style={{ animationDelay: `${i * 180}ms` }}
+                        />
+                      ))}
+                    </span>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         ) : null}
 

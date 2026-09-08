@@ -7,11 +7,14 @@
  * 把绝对路径拼进投给 agent 的提示词。**允许纯发图**（文本空、图片非空）；两者都空时
  * 服务端回 400，所以这一侧直接把发送按钮闸死，不让请求出门。
  *
- * 两条纪律：
+ * 三条纪律：
  *
- * 1. **失败不清空。** 文本与图片原样留在界面上，错误原因照抄服务端的说法，重试就是再调
- *    一次 `send`。NEVER 静默清空输入框——人打了几百字，一次网络抖动不该让它蒸发。
- * 2. **发完重拉真记录，不在本地插假的。** 成功后调 `onSent`（页面把它接到记录流的
+ * 1. **点了发送，输入框当场交还给人。** 那一刻起这句话已经撤不回了，把它继续留在输入框
+ *    里只会让人以为没发出去、又删不掉。它改由输入区上方的信封替它站着（`onSendStart`
+ *    交给记录流开的那一个），信封会一路显示它是"已发送"还是"已入队列"。
+ * 2. **失败一个字都不丢。** 输入框还空着就把这一单原样退回去；人已经在里面打了新的字
+ *    就先收在 `failed` 里，重试重发的还是原来那一份。NEVER 让一次网络抖动吃掉几百字。
+ * 3. **发完重拉真记录，不在本地插假的。** 成功后调 `onSent`（页面把它接到记录流的
  *    `reload` 上）。本地插一条假的既没有真实序号也没有出处，刷新就没了。
  */
 
@@ -76,9 +79,16 @@ export interface SendToSessionState {
   sending: boolean;
   /** 失败原因，照抄服务端的说法。成功或重新发送时清掉。 */
   error: string | null;
-  /** 有内容、不在发送中、且这场会话本来就能发。 */
+  /** 有内容（或手上还压着一单没发成的）、不在发送中、且这场会话本来就能发。 */
   canSend: boolean;
   send: () => Promise<void>;
+}
+
+/** 一次投出去的全部内容。发送那一刻从输入框里整份取走，之后输入框与它再无关系。 */
+interface OutboundPayload {
+  text: string;
+  images: AttachedImage[];
+  documents: AttachedDoc[];
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -131,20 +141,26 @@ export interface UseSendToSessionOptions {
    * 180 秒。等它回来再做任何事，等于整轮跑完之前中栏一个字都不会变——那正是"发完话
    * 体现不出会话在进行"的根因。要让人立刻看见"在跑"，只能挂在这里。
    *
-   * 带上这次投出去的原文：记录流靠它认出"这句话已经落进流里了"，好放行输入框。
+   * 带上这次投出去的原文与附件数：记录流靠原文认出"这句话已经落进流里了"，也靠这一次
+   * 调用给它开一个信封。交回的是那个信封的编号，发失败时要用它精确撤掉这一单。
    */
-  onSendStart?: (text: string) => void;
-  /** 发送成功后调它重拉记录。页面接的是记录流的 `reload`。 */
-  onSent?: () => void | Promise<void>;
-  /** 没发出去。页面据此把"在等 agent 开口"撤掉——挂着一句假的比不提示还糟。 */
-  onSendFailed?: () => void;
+  onSendStart?: (text: string, attachments: number) => string | void;
   /**
-   * 那句话**确实落进会话**的时刻（页面接的是记录流的 `deliveredAt`）。它一变就放行：
-   * 清空输入框、把按钮放回去。
+   * 发送成功后调它重拉记录，并带上这一单的信封编号。
+   *
+   * 这条接口一直等到这一轮说完才返回，所以它一回来，那句话必定早就进了这场会话——页面
+   * 据此把那个信封收掉，不必等记录流认出它长什么样。
+   */
+  onSent?: (outboundId?: string) => void | Promise<void>;
+  /** 没发出去。带上信封编号，页面据此撤掉这一单——挂着一个送不到的信封比不提示还糟。 */
+  onSendFailed?: (outboundId?: string) => void;
+  /**
+   * 那句话**确实落进会话**的时刻（页面接的是记录流的 `deliveredAt`）。它一变就把发送
+   * 按钮放回去，人可以接着说下一句。
    *
    * 不能等接口返回：那条接口一直等到整轮说完才回来（上限 180 秒）。等它的话，人明明
-   * 看见自己的话已经出现在流里了，输入框却还塞着同一段字、按钮还转着圈，只能切到别的
-   * 会话再切回来才恢复。
+   * 看见自己的话已经出现在流里了，按钮却还转着圈，只能切到别的会话再切回来才恢复。
+   * 输入框不归它管——那一份在点发送的时候就已经清了。
    */
   deliveredAt?: number | null;
 }
@@ -164,9 +180,15 @@ export function useSendToSession(
   const [documents, setDocuments] = useState<AttachedDoc[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 发出去了却没发成、又退不回输入框（人已经在里面打了别的）的那一单。重试重发它。
+  const [failed, setFailed] = useState<OutboundPayload | null>(null);
 
   // 附件编号用单调自增，不掺时间戳与随机数——同一毫秒连附两张会撞。
   const counter = useRef(0);
+  // 输入框此刻空不空。发送失败是在 await 之后才知道的，那时候只能问 ref——闭包里的
+  // text/images 停在点发送那一刻，拿它判"人有没有打新的字"必然判错。
+  const boxEmpty = useRef(true);
+  boxEmpty.current = !text && images.length === 0 && documents.length === 0;
   // 在飞的那一单的编号，以及"哪一单已经被送达信号清过了"。两者一比就知道接口回来时
   // 还该不该清——不比的话，人在放行后新打的字会被上一单的返回抹掉。
   const ticket = useRef(0);
@@ -196,6 +218,7 @@ export function useSendToSession(
     setDocuments([]);
     setSending(false);
     setError(null);
+    setFailed(null);
   }, [sessionId]);
 
   /**
@@ -249,18 +272,17 @@ export function useSendToSession(
   }, []);
 
   /**
-   * 送达信号一到就放行。
+   * 送达信号一到就把按钮放回去。
    *
    * 放行之后人可以立刻接着说下一句——那句会成为插话，投进正在跑的那一轮。这是安全的：
-   * "送达"本身就意味着上一句已经打完并落了盘，两次投喂不会在输入框里把字咬在一起。
+   * "送达"本身就意味着上一句已经落了盘，两次投喂不会在会话里把字咬在一起。
+   *
+   * 输入框在这里一个字都不动：它在点发送那一刻就清过了，此刻里面装的是人新打的东西。
    */
   useEffect(() => {
     if (!deliveredAt) return;
     if (ticket.current === 0 || clearedTicket.current === ticket.current) return;
     clearedTicket.current = ticket.current;
-    setText('');
-    setImages([]);
-    setDocuments([]);
     setSending(false);
   }, [deliveredAt]);
 
@@ -268,46 +290,76 @@ export function useSendToSession(
   const canSend =
     Boolean(enabled && sessionId) &&
     !sending &&
-    (!!body || images.length > 0 || documents.length > 0);
+    (!!body || images.length > 0 || documents.length > 0 || failed !== null);
+
+  /** 真正把一单投出去。内容此刻已经不在输入框里了，成败都只影响 `failed` 与错误提示。 */
+  const dispatch = useCallback(
+    async (payload: OutboundPayload) => {
+      if (!sessionId) return;
+      const mine = ++ticket.current;
+      setSending(true);
+      setError(null);
+      // 请求还没出门就先喊一声，顺手换回这一单的信封编号。这条接口要等整整一轮才回来，
+      // 等它回来再喊就晚了整轮。
+      const outboundId =
+        onSendStartRef.current?.(
+          payload.text,
+          payload.images.length + payload.documents.length
+        ) || undefined;
+      try {
+        await sendToSession(
+          sessionId,
+          payload.text,
+          payload.images.map((im) => im.dataUrl),
+          payload.documents.map((d) => ({ name: d.name, data: d.dataUrl }))
+        );
+        if (!mounted.current) return;
+        setFailed(null);
+        await onSentRef.current?.(outboundId);
+        if (timer.current !== null) clearTimeout(timer.current);
+        timer.current = setTimeout(() => {
+          if (mounted.current) void onSentRef.current?.(outboundId);
+        }, RELOAD_AGAIN_MS);
+      } catch (e) {
+        if (!mounted.current) return;
+        setError(e instanceof Error ? e.message : String(e));
+        // 没发出去，内容得有个去处。输入框还空着就原样退回去，人接着改就是；人已经在
+        // 里面打了新的字就先收着，重试重发的仍是这一份。两条路都一个字不丢。
+        if (boxEmpty.current) {
+          setText(payload.text);
+          setImages(payload.images);
+          setDocuments(payload.documents);
+          setFailed(null);
+        } else {
+          setFailed(payload);
+        }
+        onSendFailedRef.current?.(outboundId);
+      } finally {
+        // 只有还是自己那一单时才落下"发送中"：放行之后人已经发了下一句的话，
+        // 这里再动一次会把后一单的状态抹掉。
+        if (mounted.current && ticket.current === mine) setSending(false);
+      }
+    },
+    [sessionId]
+  );
 
   const send = useCallback(async () => {
-    const payloadText = text.trim();
-    const payloadImages = images.map((im) => im.dataUrl);
-    const payloadDocs = documents.map((d) => ({ name: d.name, data: d.dataUrl }));
     if (!enabled || !sessionId || sending) return;
-    if (!payloadText && payloadImages.length === 0 && payloadDocs.length === 0) return;
-
-    const mine = ++ticket.current;
-    setSending(true);
-    setError(null);
-    // 请求还没出门就先喊一声。这条接口要等整整一轮才回来，等它回来再喊就晚了整轮。
-    onSendStartRef.current?.(payloadText);
-    try {
-      await sendToSession(sessionId, payloadText, payloadImages, payloadDocs);
-      if (!mounted.current) return;
-      // 到这里整轮已经跑完了。**只有送达信号没来过才在这里清**：来过的话输入框早清过，
-      // 而且人可能已经打了新的一句，再清一次就是把它抹掉。失败那条路一个字都不动。
-      if (clearedTicket.current !== mine) {
-        clearedTicket.current = mine;
-        setText('');
-        setImages([]);
-        setDocuments([]);
-      }
-      await onSentRef.current?.();
-      if (timer.current !== null) clearTimeout(timer.current);
-      timer.current = setTimeout(() => {
-        if (mounted.current) void onSentRef.current?.();
-      }, RELOAD_AGAIN_MS);
-    } catch (e) {
-      if (!mounted.current) return;
-      setError(e instanceof Error ? e.message : String(e));
-      onSendFailedRef.current?.();
-    } finally {
-      // 只有还是自己那一单时才落下"发送中"：放行之后人已经发了下一句的话，
-      // 这里再动一次会把后一单的状态抹掉。
-      if (mounted.current && ticket.current === mine) setSending(false);
+    // 手上压着一单没发成、而输入框已被人占用：重试重发的是那一单，不是框里的新内容。
+    if (failed) {
+      const retry = failed;
+      setFailed(null);
+      await dispatch(retry);
+      return;
     }
-  }, [enabled, sessionId, sending, text, images, documents]);
+    const payload: OutboundPayload = { text: text.trim(), images, documents };
+    if (!payload.text && !payload.images.length && !payload.documents.length) return;
+    // 点了发送就撤不回了，输入框当场交还给人。那句话改由上方的信封替它站着。
+    setText('');
+    setImages([]);
+    setDocuments([]);
+    await dispatch(payload);
+  }, [enabled, sessionId, sending, failed, text, images, documents, dispatch]);
 
   return {
     text,

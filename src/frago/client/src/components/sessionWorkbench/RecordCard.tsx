@@ -7,7 +7,7 @@
  * |---|---|---|
  * | 文本类 | `TextShell` | user.say / agent.say / agent.think / context.inject |
  *
- * 文本类里 `context.inject` 走两条路：**旁路注入**（轻量 ai 经 hook 塞进上下文的话，
+ * 文本类里 `context.inject` 走两条路：**旁路注入**（LightAgent 经 hook 塞进上下文的话，
  * `payload.source === 'hook'`）自成一色、默认摊开；其余注入照旧折叠。判据取数据层给的
  * `source`，NEVER 靠标签名反推——标签是给人看的，改一个字就会把归类改掉。
  * | 工具类 | `ToolShell` | tool.call / tool.result / subagent.dispatch / todo.snapshot / permission.outcome / media.attach |

@@ -142,6 +142,35 @@ def build_brief(requirement: str, *, page: bool, name: str | None, session_id: s
       frago recipe create <名字> --force --prompt-file <需求文件> --tmux-target {STAGE_TMUX_SESSION}
 6. 需要人处理（create 退出码 2：认证墙 / 澄清菜单）时，frago desktop say "需要你处理：<原因>"，
    并在本会话里写清楚卡在哪。
+7. 你既是驱动者也是演示者。演示的原则是**时间差**：先让 worker 在桌面终端里跑起来，再用等它的
+   时间写讲稿和脚本，然后按脚本演。NEVER 实时手忙脚乱地操控桌面——人看到的应该是一场排好的演示，
+   不是一条条命令之间的停顿。桌面里的工具都要用上：终端（worker 干活的现场）、浏览器（配方页面）、
+   slide（全屏 HTML 讲稿，讲你准备怎么做）、strap（贴在画面上的阶段字条）、say（一句句流过的旁白）、
+   image（本地图片，如草图）、camera（推近某一处）、pause（节拍）。细则见「演示」一节。
+
+## 演示
+
+- **先起 worker，后做演示。** worker 起来之后你有大段时间；讲稿讲的是「我准备怎么做这件事」：
+  配方名、要解决什么、分几步、有没有页面、页面大概长什么样。
+- **演示走脚本，不临场敲。** 每一幕写成一个文件，一行一条桌面指令（不带 frago desktop 前缀），
+  用 frago desktop - < <文件> 按行执行；节奏用 pause --ms 写进脚本里。脚本落在 {forge_dir}/acts/，
+  讲稿是 HTML 文件，落在 {forge_dir}/slides/，一页只讲一件事，字要大——人隔着屏幕看。
+- **终端是主画面。** worker 在写的时候终端 MUST 在最前。浏览器窗口比终端宽、会盖住终端大半，而
+  browser open / click / tab 这类指向页面的动作都会自动把浏览器提到最前——所以每次看完页面 MUST
+  紧接着 focus term。slide 铺满桌面盖住所有窗口，开着时 mouse / click / camera 会被拒绝，讲完 MUST
+  slide close。
+- **只在有事发生时切换画面**：开场讲方案、阶段变化、页面有变化、worker 结束。NEVER 为了"看看"反复
+  切换，画面来回跳等于什么都没展示。
+- **四幕**，每幕一个脚本：
+  · 幕一「方案」——worker 刚起来在读需求时：slide open 讲稿第 1 页，say 两三句旁白，pause 几秒，
+    slide close；strap show "1/4 读需求" --style chip 挂着不走（不带 --ms 就一直挂到下一次 show）。
+  · 幕二「过程」——worker 写规格 / 写码时：终端为主。阶段变化时 strap show 换字条（2/4 写规格、
+    3/4 写代码）；关键时刻 camera focus --ref term:... 推近一下再 camera reset；worker 长时间没
+    输出时 say 一句在等什么。
+  · 幕三「页面」——<名字>/assets/index.html 出现或变化时：browser open 页面，say "页面出来了"，
+    pause 4000，focus term。
+  · 终幕「成品」——create 结束：有页面就 browser open 停在浏览器上；slide open 讲稿最后一页（做了
+    什么、怎么用），pause 几秒，slide close；strap show "4/4 完成"。失败则 strap 与 say 写明原因。
 
 ## 步骤
 
@@ -152,14 +181,16 @@ def build_brief(requirement: str, *, page: bool, name: str | None, session_id: s
    frago desktop window close --target browser 与 frago desktop window max --target term。
 5. 后台起（run_in_background: true）：
    frago recipe create <名字> --prompt-file {forge_dir}/requirement.md --tmux-target {STAGE_TMUX_SESSION}
+   worker 起来之后再写讲稿与四幕脚本（「演示」一节），写好先演幕一；之后每隔 30 秒 frago desktop term read
+   --lines 40 看 worker 到了哪个阶段，阶段变了就演幕二里对应的那段。
 6. 需要界面时，另起一个后台 bash 循环（同样 run_in_background: true），内容是：
-   每 5 秒查一次 ~/.frago/recipes 下 <名字>/assets/index.html 是否出现；出现后执行
-   frago desktop browser open http://127.0.0.1:8093/app/<名字>/ 并 say "页面出来了"；
-   此后每 20 秒比较 assets 目录内文件的最新修改时间，变了就再 open 一次同一地址（等于刷新）；
-   直到第 5 步的命令结束后再刷最后一次。
+   每 5 秒查一次 ~/.frago/recipes 下 <名字>/assets/index.html 是否出现；出现后执行幕三脚本
+   （browser open http://127.0.0.1:8093/app/<名字>/、say、pause 4000、focus term）；
+   此后每 20 秒比较 assets 目录内文件的最新修改时间，变了就再执行一次幕三（等于刷新）——
+   终端是主画面，浏览器只是上来亮个相；直到第 5 步的命令结束后再刷最后一次。
 7. create 结束：
    - 退出码 0 → frago recipe validate <配方目录>；再 frago recipe run <名字>（有页面就会有状态）；
-     需要界面时再 open 一次页面；say "配方完成，可以在配方页启动"。
+     然后演终幕；say "配方完成，可以在配方页启动"。
    - 退出码 2 → 按铁律第 6 条。
    - 其它 → say "失败：<一句原因>"，并在本会话里写明。
 8. 最后在本会话里给一份 5 行以内的总结：配方名、目录、modes、下一步。之后继续留在本会话里等人

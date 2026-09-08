@@ -51,6 +51,8 @@ export const MessageType = {
   DATA_COMMUNITY_RECIPES: 'data_community_recipes',
   DATA_VERSION: 'data_version',
   DATA_UPDATE_STATUS: 'data_update_status',
+  // 本机 Claude Code 订阅额度，服务端每十分钟探一次，只在数变了时推。
+  DATA_CLAUDE_USAGE: 'data_claude_usage',
 } as const;
 
 export type MessageTypeValue = (typeof MessageType)[keyof typeof MessageType];

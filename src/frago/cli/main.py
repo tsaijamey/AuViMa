@@ -308,7 +308,7 @@ def cli(ctx, gui: bool, gui_background: bool, debug: bool, timeout: int, host: s
     \b
     Any core plugs in (Claude Code / codex / opencode / codebuddy). On top of it,
     five pillars for the agent:
-      - Session companion  hook rules + a lightweight reviewer keep it on track (hook-rules, book)
+      - Session companion  hook rules + LightAgent keep it on track (hook-rules, book)
       - Hands & eyes       act in the real environment (browser, desktop, apps, view)
       - Memory & recall    def, context, session search, todo
       - Recipes            once it works, it freezes into code (recipe, daemon, market)

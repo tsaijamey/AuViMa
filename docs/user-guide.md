@@ -169,7 +169,7 @@ Access: `http://127.0.0.1:8093`
 - **Skills**: manage installed skills
 - **Workspace**: project files, logs, screenshots and outputs
 - **Guide**: built-in documentation
-- **Settings**: prompting capability (static rules + lightweight AI), model profiles, task channels, official resource sync, appearance, init status, about
+- **Settings**: prompting capability (static rules + LightAgent), model profiles, task channels, official resource sync, appearance, init status, about
 
 ## Resources & Sync
 

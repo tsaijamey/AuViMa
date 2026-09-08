@@ -151,7 +151,7 @@ _ATTACHMENT_BODY_LIST_KEY = {
 }
 
 # ── hook 注入 ───────────────────────────────────────────────────────
-# 旁路的轻量 ai 把话塞进上下文，落盘时分两条走：hook 进程自己的执行记录
+# 旁路的 LightAgent 把话塞进上下文，落盘时分两条走：hook 进程自己的执行记录
 # （``hook_success``，正文是那一坨原始标准输出），以及引擎最终真的注进上下文的那份
 # （``hook_additional_context``，正文已经解析成一段段人话）。同一句话记两遍，谁都不
 # 标记谁，中栏于是把同一次注入摆两张卡，其中一张还是 JSON。
@@ -846,7 +846,7 @@ class _Translator:
             )
             return
 
-        # 序 9a：引擎最终注进上下文的那份 hook 内容。旁路的轻量 ai 说的话就在这里，
+        # 序 9a：引擎最终注进上下文的那份 hook 内容。旁路的 LightAgent 说的话就在这里，
         # 它跟"附件"是两回事，所以自带 ``source="hook"``，界面据此单独立一格。
         if atype == _HOOK_CONTEXT_TYPE:
             self._emit_hook_inject(row, attachment, _hook_blocks(attachment.get("content")))

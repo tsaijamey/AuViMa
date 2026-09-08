@@ -872,3 +872,24 @@ export interface TokenCalendarResponse {
   month_total: TokenDayBucket;
   computed_at: string;
 }
+
+/** 一档订阅额度。`resets_at` 是 Claude Code 的原话，带着人自己的时区名。 */
+export interface ClaudeUsageBucket {
+  percent: number;
+  resets_at: string | null;
+  /** 型号那一档才有：Fable / Opus / … */
+  label?: string | null;
+}
+
+/**
+ * 本机 Claude Code 的订阅额度。`available` 为假就是这台机器答不出这件事——没装
+ * Claude Code，或者用的是 API key 而不是订阅。
+ */
+export interface ClaudeUsage {
+  available: boolean;
+  session: ClaudeUsageBucket | null;
+  week_all: ClaudeUsageBucket | null;
+  week_model: ClaudeUsageBucket | null;
+  checked_at: string | null;
+  error: string | null;
+}

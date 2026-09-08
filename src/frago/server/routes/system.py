@@ -5,7 +5,12 @@ Provides endpoints for server health checks and information.
 
 from fastapi import APIRouter
 
-from frago.server.models import SystemStatusResponse, ServerInfoResponse, SystemDirectoriesResponse
+from frago.server.models import (
+    ClaudeUsageResponse,
+    ServerInfoResponse,
+    SystemDirectoriesResponse,
+    SystemStatusResponse,
+)
 from frago.server.services.system_service import SystemService
 from frago.server.utils import get_server_info
 
@@ -69,3 +74,18 @@ async def get_directories() -> SystemDirectoriesResponse:
         home=dirs.get("home", ""),
         cwd=dirs.get("cwd"),
     )
+
+
+@router.get("/system/claude-usage", response_model=ClaudeUsageResponse)
+async def get_claude_usage(refresh: bool = False) -> ClaudeUsageResponse:
+    """本机 Claude Code 的订阅额度。
+
+    读的是后台每十分钟探一次的缓存，不在请求路径上跑 claude——那要三秒钟，界面第一次
+    画出来的时间不该押在它身上。`refresh=true` 才当场重探。
+    """
+    from frago.server.services.claude_usage_service import ClaudeUsageService
+
+    service = ClaudeUsageService.get_instance()
+    usage = await service.refresh() if refresh else service.get_usage()
+
+    return ClaudeUsageResponse(**usage)

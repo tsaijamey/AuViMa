@@ -133,12 +133,12 @@ frago hook-rules add --rule='{
 |---|---|---|
 | `~/.frago/hook-rules.json` | 你自己的路由与禁令 | `frago hook-rules add` |
 | `~/.frago/hook/builtin-rules.json` | 随包发布的那批规则 | 直接编辑；升级不会覆盖已存在的文件 |
-| `~/.frago/hook/prompt.md` | 提问那一环，轻量 ai 被要求输出什么 | 直接编辑 |
+| `~/.frago/hook/prompt.md` | 提问那一环，LightAgent 被要求输出什么 | 直接编辑 |
 | `~/.frago/hook/stop.md` | 收尾那一环的免拦清单与判据 | 直接编辑 |
 | `~/.frago/hook/veto.md` | 否决那一环，什么算「只有用户能决定」 | 直接编辑 |
-| `~/.frago/hook/fallback.md` | 轻量 ai 没出声时说什么 | 直接编辑 |
+| `~/.frago/hook/fallback.md` | LightAgent 没出声时说什么 | 直接编辑 |
 | `~/.frago/hook/stop-signals.json` | 收尾闸门的信号表，见 `frago book stop-signals-authoring` | 直接编辑 |
-| `~/.frago/agent-disciplines.md` | 轻量 ai 判断时依据的纪律 | 直接编辑 |
+| `~/.frago/agent-disciplines.md` | LightAgent 判断时依据的纪律 | 直接编辑 |
 | `~/.frago/config.json` | 开关、经验域名 | 直接编辑 |
 
 说明书文件里，`>>>` 之后那一行是模型回复被预填的开头，不是正文；`{{failure_domain}}` 会被配置里的经验域名替换。

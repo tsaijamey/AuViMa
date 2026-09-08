@@ -138,7 +138,7 @@ winget install Microsoft.Edge
 2. **自动安装** — 通过 nvm 安装 Node.js（仅 macOS/Linux）、通过 npm 安装 Claude Code
 3. **配置模型 profile** — 官方端点或自定义端点（DeepSeek、代理、本地模型）
 4. **安装提示引擎** — 部署 `frago-core` 并为 Claude Code / opencode 注册 hook
-   （静态规则 + 轻量 AI）
+   （静态规则 + LightAgent）
 5. **安装资源** — Slash 命令到 `~/.claude/commands/`，配方到 `~/.frago/recipes/`
 
 ### init 选项

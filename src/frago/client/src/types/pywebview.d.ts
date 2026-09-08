@@ -487,11 +487,6 @@ export interface PyWebviewApi {
   update_auth_method(auth_data: AuthUpdateRequest): Promise<MainConfigUpdateResponse>;
 
   /**
-   * Open working directory in file manager
-   */
-  open_working_directory(): Promise<ApiResponse>;
-
-  /**
    * Get secrets schema and configured status for a recipe
    * @param recipe_name Recipe name
    */

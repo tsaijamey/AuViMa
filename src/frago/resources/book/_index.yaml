@@ -5,7 +5,7 @@
 # 第一性原理 — frago 的根本主张，决定一切设计取舍
 - name: frago-principle-os
   category: available
-  brief: "frago=agent OS；底座内核可换（Claude Code/codex/opencode/codebuddy）；agent 面五支柱 会话伴侣(hook+轻量ai+book)/手和眼(browser/desktop/apps/view)/记忆与召回(def/context/session search/todo)/配方(recipe/daemon/market)/边界(agent/channel/remote/schedule)；人面一层（WebUI/客户端/profile/市场/安装）不在 agent 视野"
+  brief: "frago=agent OS；底座内核可换（Claude Code/codex/opencode/codebuddy）；agent 面五支柱 会话伴侣(hook+LightAgent+book)/手和眼(browser/desktop/apps/view)/记忆与召回(def/context/session search/todo)/配方(recipe/daemon/market)/边界(agent/channel/remote/schedule)；人面一层（WebUI/客户端/profile/市场/安装）不在 agent 视野"
 
 - name: frago-principle-supreme
   category: must
@@ -123,7 +123,7 @@
 
 - name: stop-signals-authoring
   category: better
-  brief: "收尾时判断该不该结束，先过一道不花钱的本地闸门再问轻量 ai；闸门看什么写在 ~/.frago/hook/stop-signals.json，一条信号含匹配对象与给模型看的那句话，写窄不写宽（第二人称区分「函数错了」与「你错了」），改完 frago-core --stop-check 验"
+  brief: "收尾时判断该不该结束，先过一道不花钱的本地闸门再问 LightAgent；闸门看什么写在 ~/.frago/hook/stop-signals.json，一条信号含匹配对象与给模型看的那句话，写窄不写宽（第二人称区分「函数错了」与「你错了」），改完 frago-core --stop-check 验"
 
 - name: session-handoff
   category: better

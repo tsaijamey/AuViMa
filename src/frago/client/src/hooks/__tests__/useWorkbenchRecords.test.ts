@@ -345,3 +345,191 @@ describe('送达信号：输入区靠它放行', () => {
     expect(result.current.deliveredAt).toBeNull();
   });
 });
+
+describe('信封：已发送 → 已入队列 → 成为一轮', () => {
+  function stubGrowing(fresh: () => WorkbenchRecord | null) {
+    return vi.fn(async (input: RequestInfo | URL) => {
+      const body = /[?&]tail=true/.test(String(input))
+        ? [record(0), record(1), record(2)]
+        : (() => {
+            const f = fresh();
+            return f ? [f] : [];
+          })();
+      return { ok: true, json: async () => body } as Response;
+    });
+  }
+
+  it('刚发出去是「已发送」：请求出了门，会话里还找不到它', async () => {
+    vi.stubGlobal('fetch', stubSession(() => 3));
+    const { result } = renderHook(() => useWorkbenchRecords(SID));
+    await waitFor(() => expect(result.current.records).toHaveLength(3));
+
+    expect(result.current.outbound).toHaveLength(0);
+    act(() => {
+      result.current.markSent('去备份目录找', 1);
+    });
+    expect(result.current.outbound).toHaveLength(1);
+    expect(result.current.outbound[0].state).toBe('sent');
+    expect(result.current.outbound[0].text).toBe('去备份目录找');
+    expect(result.current.outbound[0].attachments).toBe(1);
+  });
+
+  it('agent 正忙，它成了一张还在队列上的插话卡：转「已入队列」，信封不撤', async () => {
+    let landed = false;
+    vi.stubGlobal(
+      'fetch',
+      stubGrowing(() =>
+        landed
+          ? {
+              ...record(3),
+              ts: Date.now(),
+              kind: 'context.inject',
+              payload: { channel: 'queued_command', body: '插一句', queue_state: 'pending' },
+            }
+          : null
+      )
+    );
+    const { result } = renderHook(() => useWorkbenchRecords(SID, { live: true }));
+    await waitFor(() => expect(result.current.records).toHaveLength(3));
+
+    act(() => {
+      result.current.markSent('插一句');
+    });
+    landed = true;
+    await waitFor(() => expect(result.current.outbound[0]?.state).toBe('queued'), {
+      timeout: 4000,
+    });
+    // 进了会话就算送达：输入区的发送按钮该放回去了，哪怕它还排在队列上。
+    expect(result.current.deliveredAt).not.toBeNull();
+  });
+
+  it('那一轮把它并进去了，信封退场——记录流里已经有它的位置', async () => {
+    let landed = false;
+    vi.stubGlobal(
+      'fetch',
+      stubGrowing(() =>
+        landed
+          ? {
+              ...record(3),
+              ts: Date.now(),
+              kind: 'context.inject',
+              payload: { channel: 'queued_command', body: '插一句', queue_state: 'absorbed' },
+            }
+          : null
+      )
+    );
+    const { result } = renderHook(() => useWorkbenchRecords(SID, { live: true }));
+    await waitFor(() => expect(result.current.records).toHaveLength(3));
+
+    act(() => {
+      result.current.markSent('插一句');
+    });
+    landed = true;
+    await waitFor(() => expect(result.current.outbound).toHaveLength(0), { timeout: 4000 });
+  });
+
+  it('agent 当时闲着，它直接成了用户发言：信封同样退场', async () => {
+    let landed = false;
+    vi.stubGlobal(
+      'fetch',
+      stubGrowing(() =>
+        landed
+          ? { ...record(3), ts: Date.now(), kind: 'user.say', payload: { text: '去备份目录找' } }
+          : null
+      )
+    );
+    const { result } = renderHook(() => useWorkbenchRecords(SID, { live: true }));
+    await waitFor(() => expect(result.current.records).toHaveLength(3));
+
+    act(() => {
+      result.current.markSent('去备份目录找');
+    });
+    expect(result.current.outbound).toHaveLength(1);
+    landed = true;
+    await waitFor(() => expect(result.current.outbound).toHaveLength(0), { timeout: 4000 });
+  });
+
+  it('斜杠命令落进档案时穿了一层壳，照样要认出来是自己那一句', async () => {
+    // 人打的是 `/goal 把日历挪到底部`，档案里写的是 <command-name>/goal</command-name>
+    // 加 <command-args>把日历挪到底部</command-args>。两份字面上毫无关系，认不出这层壳
+    // 信封就会一直挂着说"已发送"，而 agent 早就在干活了。形状取自真会话记录。
+    let landed = false;
+    vi.stubGlobal(
+      'fetch',
+      stubGrowing(() =>
+        landed
+          ? {
+              ...record(3),
+              ts: Date.now(),
+              kind: 'user.say',
+              payload: {
+                text:
+                  '<command-name>/goal</command-name>\n            ' +
+                  '<command-message>goal</command-message>\n            ' +
+                  '<command-args>把日历挪到底部，settings 挪到 data 下面</command-args>',
+              },
+            }
+          : null
+      )
+    );
+    const { result } = renderHook(() => useWorkbenchRecords(SID, { live: true }));
+    await waitFor(() => expect(result.current.records).toHaveLength(3));
+
+    act(() => {
+      result.current.markSent('/goal 把日历挪到底部，settings 挪到 data 下面');
+    });
+    expect(result.current.outbound).toHaveLength(1);
+
+    landed = true;
+    await waitFor(() => expect(result.current.outbound).toHaveLength(0), { timeout: 4000 });
+  });
+
+  it('发送接口回来了就收信封：那一轮都说完了，它必定已经在会话里', async () => {
+    vi.stubGlobal('fetch', stubSession(() => 3));
+    const { result } = renderHook(() => useWorkbenchRecords(SID));
+    await waitFor(() => expect(result.current.records).toHaveLength(3));
+
+    let id = '';
+    act(() => {
+      id = result.current.markSent('一句认不出来的话');
+    });
+    expect(result.current.outbound).toHaveLength(1);
+
+    act(() => result.current.settleSent(id));
+    expect(result.current.outbound).toHaveLength(0);
+  });
+
+  it('没发出去就按编号收走那一个信封，别的不动', async () => {
+    vi.stubGlobal('fetch', stubSession(() => 3));
+    const { result } = renderHook(() => useWorkbenchRecords(SID));
+    await waitFor(() => expect(result.current.records).toHaveLength(3));
+
+    let first = '';
+    act(() => {
+      first = result.current.markSent('第一句');
+    });
+    act(() => {
+      result.current.markSent('第二句');
+    });
+    expect(result.current.outbound).toHaveLength(2);
+
+    act(() => result.current.clearSent(first));
+    expect(result.current.outbound.map((m) => m.text)).toEqual(['第二句']);
+  });
+
+  it('换一场会话，上一场的信封不许跟过去', async () => {
+    vi.stubGlobal('fetch', stubSession(() => 3));
+    const other = '11111111-2222-3333-4444-555555555555';
+    const { result, rerender } = renderHook(({ sid }) => useWorkbenchRecords(sid), {
+      initialProps: { sid: SID },
+    });
+    await waitFor(() => expect(result.current.records).toHaveLength(3));
+    act(() => {
+      result.current.markSent('一句话');
+    });
+    expect(result.current.outbound).toHaveLength(1);
+
+    rerender({ sid: other });
+    expect(result.current.outbound).toHaveLength(0);
+  });
+});

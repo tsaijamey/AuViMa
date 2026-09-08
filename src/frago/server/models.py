@@ -315,6 +315,29 @@ class SystemDirectoriesResponse(BaseModel):
     cwd: Optional[str] = None  # Current working directory (optional)
 
 
+class ClaudeUsageBucket(BaseModel):
+    """一档额度。`resets_at` 照 Claude Code 的原话留着，带着人自己的时区名。"""
+
+    percent: int = 0
+    resets_at: Optional[str] = None
+    label: Optional[str] = None  # 型号那一档才有：Fable / Opus / …
+
+
+class ClaudeUsageResponse(BaseModel):
+    """Response for GET /api/system/claude-usage
+
+    `available` 为假表示这台机器答不出订阅额度——没装 Claude Code，或者用的是 API key
+    而不是订阅。界面据此整块不画，而不是画三根空条子。
+    """
+
+    available: bool = False
+    session: Optional[ClaudeUsageBucket] = None  # 五小时会话窗口
+    week_all: Optional[ClaudeUsageBucket] = None  # 本周全模型
+    week_model: Optional[ClaudeUsageBucket] = None  # 本周某个型号
+    checked_at: Optional[str] = None
+    error: Optional[str] = None
+
+
 class SkillItemResponse(BaseModel):
     """Response for skill list endpoint"""
 

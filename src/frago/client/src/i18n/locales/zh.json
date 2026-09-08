@@ -31,16 +31,19 @@
       "loading": "加载中..."
     },
     "appearance": {
-      "trigger": "外观与状态",
-      "label": "外观",
-      "group": "深浅色",
       "light": "浅色",
       "dark": "深色"
     },
-    "engine": {
-      "label": "引擎",
-      "running": "运行中",
-      "idle": "空闲"
+    "usage": {
+      "label": "订阅额度",
+      "weekAll": "全模型",
+      "weekModel": "型号",
+      "session": "5 小时",
+      "weekAllLong": "本周全模型",
+      "weekModelLong": "本周型号",
+      "sessionLong": "当前五小时窗口",
+      "tooltip": "{{name}} 已用 {{percent}}%",
+      "tooltipReset": "{{name}} 已用 {{percent}}% · {{reset}} 重置"
     }
   },
   "tokenCalendar": {
@@ -450,8 +453,8 @@
       "about": "关于"
     },
     "tabDesc": {
-      "capability": "静态规则与轻量 ai 此刻的状态",
-      "general": "认证与工作目录",
+      "capability": "静态规则与 LightAgent 此刻的状态",
+      "general": "认证与账号配置",
       "channels": "任务接入通道",
       "resources": "官方命令与技能同步",
       "appearance": "语言与行为",
@@ -459,7 +462,7 @@
       "about": "版本与许可"
     },
     "capability": {
-      "intro": "frago 在每次提交 prompt 时给 agent 注入提示，分两层：静态规则 (static rules) 常驻生效，轻量 ai (lightweight ai) 需要一个模型 profile 才存在。下面是两层此刻的实际状态。",
+      "intro": "frago 在每次提交 prompt 时给 agent 注入提示，分两层：静态规则 (static rules) 常驻生效，LightAgent 需要一个模型 profile 才存在。下面是两层此刻的实际状态。",
       "loadFailed": "读取提示能力状态失败。",
       "saveFailed": "开关没有写入成功，配置保持原样。",
       "static": {
@@ -471,7 +474,7 @@
         "noConfigNeeded": "这一层不需要任何配置，也不消耗模型额度。"
       },
       "ai": {
-        "name": "轻量 ai (lightweight ai)",
+        "name": "LightAgent",
         "lede": "每次提交 prompt 时，把最近几轮会话连同规则、book、经验域的索引交给一个便宜模型，换回一句该注入的提示。",
         "unknownModel": "未知模型",
         "unnamedProfile": "未命名 profile",
@@ -495,10 +498,10 @@
           "not_configured": "去配置模型 profile",
           "no_key": "去填 api key"
         },
-        "switch": "启用轻量 ai",
+        "switch": "启用 LightAgent",
         "switchDesc": "关掉后 frago 不再为提示调用模型，静态规则继续工作。",
         "persistence": "开关写入 <c>~/.frago/config.json</c> 的 <c>hook_review.enabled</c>，引擎读的是同一个字段；这一段缺失时视为开启。",
-        "envOff": "环境变量 <c>FRAGO_REVIEW=off</c> 正在生效，它压过这里的开关：当前环境下轻量 ai 一律不运行，界面开关暂时不起作用。"
+        "envOff": "环境变量 <c>FRAGO_REVIEW=off</c> 正在生效，它压过这里的开关：当前环境下 LightAgent 一律不运行，界面开关暂时不起作用。"
       }
     },
     "general": {
@@ -514,8 +517,6 @@
       "haikuModel": "Haiku 模型",
       "saveConfiguration": "保存配置",
       "edit": "编辑",
-      "workingDirectory": "工作目录",
-      "open": "打开",
       "confirmSwitch": "确认切换到官方 API",
       "confirmSwitchDesc": "这将移除您的自定义 API 配置",
       "confirm": "确认",
@@ -535,7 +536,6 @@
       "leaveEmptyToKeep": "留空保持现有密钥",
       "confirmSwitchBtn": "确认切换",
       "failedToLoadConfig": "加载配置失败",
-      "failedToOpenDir": "打开目录失败",
       "failedToOpenVSCode": "在 VSCode 中打开失败",
       "manageProfiles": "管理配置",
       "authenticationStatus": "认证状态",
@@ -543,9 +543,10 @@
       "usingCustomApi": "正在使用自定义 API 端点",
       "endpoint": "端点",
       "model": "模型",
-      "openInFileManager": "在文件管理器里打开",
+      "dangerZone": "危险操作",
       "claudeSettingsFile": "Claude Code 配置文件",
       "claudeSettingsFileDesc": "这是 Claude Code 自己的配置，不是 frago 的工作目录。",
+      "claudeSettingsFileWarning": "frago 的 hook 注册在这个文件里。改坏了，Claude Code 可能起不来，frago 的所有 hook 也会无声失效。除非清楚自己在改什么，否则不要动它。",
       "openInVSCode": "用 VSCode 打开"
     },
     "profiles": {
@@ -1043,7 +1044,6 @@
       "pinnedHeader": "置顶",
       "restHeader": "其余",
       "summary": "共 {{total}} 场 · Claude Code {{cc}} 场 · opencode {{oc}} 场 · codex {{cx}} 场",
-      "launching": "正在起 {{name}}，等它报出会话编号…",
       "pinnedToastCollapsed": "已置顶，在折起来的置顶区里",
       "copied": "恢复命令已复制",
       "copyFailed": "复制失败",
@@ -1237,7 +1237,11 @@
       "send": "发送",
       "sending": "发送中",
       "addAttachment": "添加图片或文档",
-      "removeFile": "移除 {{name}}"
+      "removeFile": "移除 {{name}}",
+      "sent": "已发送",
+      "queued": "已入队列",
+      "attachmentsOnly": "（只有附件，没打字）",
+      "outboundAttachments": "含 {{n}} 个附件"
     },
     "newSession": {
       "title": "新建会话",
@@ -1274,6 +1278,20 @@
       "launchFailed": "这一场没起来",
       "imageUnreadable": "图片读不出来",
       "sendFailed": "发送没成功（HTTP {{status}}）"
+    },
+    "launch": {
+      "title": "正在起一场 {{name}} 的会话",
+      "failedTitle": "这一场没起来",
+      "firstMessage": "已经发出去的第一句话",
+      "stepClaim": "{{name}} 报出会话编号",
+      "stepFirstRecord": "它往档案里写下第一笔",
+      "hint": "会话起来之后这块就会让位给记录流，通常几秒到十几秒。",
+      "failed": "没起来：{{reason}}",
+      "dismiss": "收起",
+      "railTitle": "新会话",
+      "railClaiming": "正在起 {{name}}，等它报出编号",
+      "railWarming": "{{name}} 起来了，在等它写下第一笔",
+      "railFailed": "没起来，去中栏看原因"
     }
   }
 }

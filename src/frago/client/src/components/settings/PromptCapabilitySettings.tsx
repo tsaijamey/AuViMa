@@ -2,7 +2,7 @@
  * PromptCapabilitySettings — frago 给 agent 的提示分两层，这里把两层摊开讲。
  *
  * 设置页其余分区的框架是"给你一堆东西去管理"。一个刚装好 frago 的人第一眼要
- * 知道的不是清单，是**此刻到底有没有在工作**——尤其是轻量 ai 那层：不配模型
+ * 知道的不是清单，是**此刻到底有没有在工作**——尤其是 LightAgent 那层：不配模型
  * 它就静默不存在，配了而 api key 为空则每一轮都白等一次注定失败的请求。两种
  * 情况过去在界面上都毫无痕迹。
  *
@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 
 import { getHookReviewStatus, setHookReviewEnabled } from '@/api';
-import type { HookReviewStatus, LightweightAiStatus } from '@/api';
+import type { HookReviewStatus, LightAgentStatus } from '@/api';
 
 interface PromptCapabilitySettingsProps {
   /** 跳去配模型 profile 的地方（general 分区的模型配置弹窗）。 */
@@ -32,7 +32,7 @@ interface PromptCapabilitySettingsProps {
 }
 
 /** 每种状态配一个语气：色调、图标、以及卡片的整体舒适态。 */
-const TONE: Record<LightweightAiStatus, { tone: string; Icon: typeof CircleCheck }> = {
+const TONE: Record<LightAgentStatus, { tone: string; Icon: typeof CircleCheck }> = {
   enabled: { tone: 'ok', Icon: CircleCheck },
   disabled: { tone: 'off', Icon: CircleSlash },
   not_configured: { tone: 'warn', Icon: TriangleAlert },
@@ -90,7 +90,7 @@ export default function PromptCapabilitySettings({
     return <div className="settings-cap-error">{error || t('settings.capability.loadFailed')}</div>;
   }
 
-  const ai = status.lightweight_ai;
+  const ai = status.lightagent;
   const { tone, Icon } = TONE[ai.status];
   const count = status.static_rules.count;
 
@@ -126,7 +126,7 @@ export default function PromptCapabilitySettings({
         <p className="settings-cap-note">{t('settings.capability.static.noConfigNeeded')}</p>
       </section>
 
-      {/* ── 第二层：轻量 ai ────────────────────────────────────── */}
+      {/* ── 第二层：LightAgent ────────────────────────────────────── */}
       <section className={`settings-cap-card is-${tone}`}>
         <header className="settings-cap-head">
           <span className="settings-cap-mark">
