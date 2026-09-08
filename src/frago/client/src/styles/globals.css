@@ -5148,3 +5148,320 @@ a:not(.btn):not(.nav-tab):not(.sidebar-github-link):hover {
     width: 100%;
   }
 }
+
+/* === 本机会话清点（左栏底部那颗按钮 + 它的浮窗） ===
+   会话数常驻在栏底，跟额度条一样属于「我这台机器现在什么状况」。 */
+
+/* 图标右下角贴一个数字。做成角标而不是把数字写在图标旁边，是因为这根栏收起时
+   只有 40px 宽，一排四颗按钮已经占满，横向再挤一个数字会把整排推变形。 */
+.rail-tool--count {
+  position: relative;
+}
+
+.rail-tool-count {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  min-width: 13px;
+  padding: 0 2px;
+  font-size: 9px;
+  line-height: 13px;
+  font-weight: 600;
+  text-align: center;
+  border-radius: 7px;
+  background: var(--bg-tertiary, var(--bg-hover));
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
+.tmux-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.tmux-card {
+  width: min(860px, calc(100vw - 2 * var(--spacing-lg)));
+  max-height: calc(100vh - 2 * var(--spacing-lg));
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  overflow: hidden;
+}
+
+.tmux-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.tmux-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.tmux-summary {
+  font-weight: 400;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.tmux-header-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.tmux-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.tmux-icon-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.tmux-filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: var(--spacing-sm);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.tmux-filter-label {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.tmux-chip {
+  padding: 3px 9px;
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.tmux-chip:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.tmux-chip--on {
+  background: var(--sidebar-item-selected-bg);
+  color: var(--sidebar-item-selected-text);
+  border-color: transparent;
+}
+
+.tmux-threshold-input {
+  width: 62px;
+  padding: 3px 6px;
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.tmux-select-btn {
+  margin-left: auto;
+  padding: 3px 10px;
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.tmux-select-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.tmux-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 120px;
+}
+
+/* 一行就是一场会话。选中态给整块换底加描边——单边竖条只是个装饰，读不出
+   「这一整条被选了」。 */
+.tmux-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.tmux-row:hover {
+  background: var(--bg-hover);
+}
+
+.tmux-row--on {
+  background: var(--bg-secondary);
+  border-color: var(--border-color-strong, var(--border-color));
+  box-shadow: inset 0 0 0 1px var(--border-color);
+}
+
+.tmux-row--locked {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.tmux-check {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.tmux-row-body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.tmux-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+/* 闲置时长是这一行最先要读到的东西，给它加重。 */
+.tmux-idle {
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.tmux-idle--stale {
+  color: var(--color-warning, var(--text-primary));
+}
+
+.tmux-stop-at,
+.tmux-mem {
+  white-space: nowrap;
+}
+
+.tmux-name {
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-size-xs);
+  opacity: 0.7;
+}
+
+.tmux-badge {
+  padding: 1px 6px;
+  font-size: var(--font-size-xs);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.tmux-badge--busy {
+  background: var(--color-primary-soft, var(--bg-hover));
+  color: var(--color-primary, var(--text-primary));
+}
+
+/* 正文截取：一行里最宽的那一块，人靠它认出这是哪一场会话。压到两行，
+   再多就把下一场会话挤出视野。 */
+.tmux-excerpt {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.tmux-empty,
+.tmux-error,
+.tmux-report {
+  padding: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.tmux-error {
+  color: var(--color-danger, var(--text-primary));
+}
+
+.tmux-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--border-color);
+}
+
+.tmux-foot-note,
+.tmux-confirm-text {
+  flex: 1;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.tmux-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.tmux-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.tmux-btn--danger {
+  border-color: var(--color-danger, var(--border-color));
+  color: var(--color-danger, var(--text-primary));
+}
+
+.tmux-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

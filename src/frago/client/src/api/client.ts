@@ -109,6 +109,9 @@ import type {
   TokenDayBucket,
   ClaudeUsage,
   ClaudeUsageBucket,
+  TmuxSessionsResponse,
+  TmuxSessionsCount,
+  CloseTmuxSessionsResponse,
 } from '@/types/api';
 
 export type {
@@ -1107,4 +1110,35 @@ export async function getTokenCalendar(month: string): Promise<TokenCalendarResp
   return fetchApi<TokenCalendarResponse>(
     `/claude-sessions/token-calendar?month=${encodeURIComponent(month)}`
   );
+}
+
+/**
+ * 清点本机全部 frago tmux 会话。
+ *
+ * `excerptChars` 决定每行那段正文截多长——够不够认出「这是哪一场会话」由界面按自己
+ * 的行宽决定，服务端不写死。
+ */
+export async function getTmuxSessions(excerptChars = 160): Promise<TmuxSessionsResponse> {
+  return fetchApi<TmuxSessionsResponse>(`/system/tmux-sessions?excerpt_chars=${excerptChars}`);
+}
+
+/** 逐条点名关闭。服务端一条失败继续下一条，结果逐条回报。 */
+export async function closeTmuxSessions(names: string[]): Promise<CloseTmuxSessionsResponse> {
+  return fetchApi<CloseTmuxSessionsResponse>('/system/tmux-sessions/close', {
+    method: 'POST',
+    body: JSON.stringify({ names }),
+  });
+}
+
+/** 改「闲了多久算该清」的门槛并落盘；返回按新门槛重新清点的结果。 */
+export async function setTmuxCleanupThreshold(hours: number): Promise<TmuxSessionsResponse> {
+  return fetchApi<TmuxSessionsResponse>('/system/tmux-sessions/threshold', {
+    method: 'PUT',
+    body: JSON.stringify({ cleanup_idle_hours: hours }),
+  });
+}
+
+/** 只数个数和内存——左下角那个数字每分钟问一次的就是它，不读任何记录。 */
+export async function getTmuxSessionCount(): Promise<TmuxSessionsCount> {
+  return fetchApi<TmuxSessionsCount>('/system/tmux-sessions/count');
 }

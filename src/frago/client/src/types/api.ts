@@ -893,3 +893,55 @@ export interface ClaudeUsage {
   checked_at: string | null;
   error: string | null;
 }
+
+/**
+ * 本机一场 tmux agent 会话。
+ *
+ * `idle_secs` 说的是「自最后一次把话说完起过了多久」，不是 tmux 那边的活动时间——
+ * 后者被 claude 界面自己的重绘推着走，实测同一批会话两个口径能差出四个多小时。
+ * 判不出来（找不到记录、这一轮还没说完）为 null，界面显示「—」而不是编一个 0。
+ */
+export interface TmuxSessionItem {
+  /** tmux 会话名，关闭时点的就是它 */
+  name: string;
+  /** 去掉 frago-agent- 前缀后那截，界面上显示的名字 */
+  label: string;
+  session_id: string | null;
+  stop_reason: string | null;
+  last_stop_at: string | null;
+  idle_secs: number | null;
+  /** 最后一段回答的截取，够认出这是哪一场会话 */
+  excerpt: string;
+  memory_mb: number;
+  /** 此刻仍在干活（转轮在转，或派出去的后台 shell 没回来）——不许批量关 */
+  busy: boolean;
+  /** 归工作台那个会话池管 */
+  managed: boolean;
+}
+
+export interface TmuxSessionsResponse {
+  sessions: TmuxSessionItem[];
+  total: number;
+  total_memory_mb: number;
+  /** 「闲了多久算该清」的门槛，小时。跟后台自动回收那条线是两回事 */
+  cleanup_idle_hours: number;
+}
+
+export interface CloseTmuxSessionResult {
+  name: string;
+  ok: boolean;
+  via: string;
+  error: string | null;
+}
+
+export interface CloseTmuxSessionsResponse {
+  results: CloseTmuxSessionResult[];
+  closed: number;
+  failed: number;
+}
+
+/** 左下角那个数字：只有个数和内存，不带任何一场会话的内容。 */
+export interface TmuxSessionsCount {
+  total: number;
+  total_memory_mb: number;
+}

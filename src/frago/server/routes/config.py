@@ -23,6 +23,7 @@ def _webui_sessions_response() -> WebuiSessionsResponse:
     return WebuiSessionsResponse(
         max_resident=ws.max_resident,
         idle_timeout_secs=ws.idle_timeout_secs,
+        cleanup_idle_hours=ws.cleanup_idle_hours,
     )
 
 

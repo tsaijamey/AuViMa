@@ -1294,5 +1294,38 @@
       "railWarming": "{{name}} is up, waiting for its first record",
       "railFailed": "Didn't start — see the middle column"
     }
+  },
+  "tmuxSessions": {
+    "title": "Local sessions",
+    "summary": "{{total}} running · {{memory}} MB",
+    "railTooltip": "{{n}} tmux sessions using {{memory}} MB. Open to review and close",
+    "refresh": "Re-scan",
+    "close": "Close",
+    "empty": "No sessions running on this machine",
+    "noExcerpt": "(nothing said yet)",
+    "threshold": {
+      "label": "Idle over",
+      "preset": "{{n}}h",
+      "custom": "Custom hours",
+      "selectMatching": "Select these {{n}}"
+    },
+    "idle": {
+      "justNow": "just now",
+      "minutes": "{{n}}m ago",
+      "hours": "{{n}}h ago",
+      "days": "{{n}}d ago"
+    },
+    "badge": {
+      "busy": "working"
+    },
+    "selectedNote": "{{n}} selected · ~{{memory}} MB",
+    "closeSelected": "Close selected",
+    "confirm": "Close these {{n}} sessions? Frees ~{{memory}} MB; their context is gone.",
+    "cancel": "Not yet",
+    "confirmClose": "Confirm close",
+    "report": {
+      "allClosed": "Closed {{n}} sessions",
+      "partial": "Closed {{n}}, {{failed}} failed"
+    }
   }
 }

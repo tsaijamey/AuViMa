@@ -1294,5 +1294,38 @@
       "railWarming": "{{name}} 起来了，在等它写下第一笔",
       "railFailed": "没起来，去中栏看原因"
     }
+  },
+  "tmuxSessions": {
+    "title": "本机会话",
+    "summary": "{{total}} 场 · {{memory}} MB",
+    "railTooltip": "本机 {{n}} 场 tmux 会话，共占 {{memory}} MB。点开清点与关闭",
+    "refresh": "重新清点",
+    "close": "关闭",
+    "empty": "本机没有正在跑的会话",
+    "noExcerpt": "（这场还没说过话）",
+    "threshold": {
+      "label": "闲置超过",
+      "preset": "{{n}} 小时",
+      "custom": "自定义小时数",
+      "selectMatching": "选中这 {{n}} 场"
+    },
+    "idle": {
+      "justNow": "刚刚",
+      "minutes": "{{n}} 分钟前",
+      "hours": "{{n}} 小时前",
+      "days": "{{n}} 天前"
+    },
+    "badge": {
+      "busy": "在干活"
+    },
+    "selectedNote": "已选 {{n}} 场 · 约 {{memory}} MB",
+    "closeSelected": "关闭选中",
+    "confirm": "确认关掉这 {{n}} 场？约释放 {{memory}} MB，会话上下文不再保留。",
+    "cancel": "再想想",
+    "confirmClose": "确认关闭",
+    "report": {
+      "allClosed": "已关闭 {{n}} 场",
+      "partial": "关闭 {{n}} 场，{{failed}} 场没关成"
+    }
   }
 }

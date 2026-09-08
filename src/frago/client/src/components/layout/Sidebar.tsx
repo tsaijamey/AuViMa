@@ -34,10 +34,13 @@ import {
   CalendarDays,
   Moon,
   Sun,
+  Terminal,
 } from 'lucide-react';
 import { useAppStore, type PageType } from '@/stores/appStore';
 import { useClaudeUsage } from '@/hooks/useClaudeUsage';
+import { useTmuxSessionCount } from '@/hooks/useTmuxSessions';
 import TokenCalendarModal from '@/components/sessionWorkbench/TokenCalendarModal';
+import TmuxSessionsModal from './TmuxSessionsModal';
 import type { ClaudeUsageBucket } from '@/types/api';
 
 export interface RailItem {
@@ -186,6 +189,8 @@ function RailTools() {
   const { t } = useTranslation();
   const { config, setTheme } = useAppStore();
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [tmuxOpen, setTmuxOpen] = useState(false);
+  const { total: tmuxTotal, totalMemoryMb } = useTmuxSessionCount();
   const theme = config?.theme === 'light' ? 'light' : 'dark';
 
   // Esc 关月历。它是个盖住半屏的浮层，不该只有一个关闭按钮能收。
@@ -200,6 +205,19 @@ function RailTools() {
 
   return (
     <div className="rail-tools">
+      {/* 会话数就写在图标旁边，不做成小红点：这个数字本身要能读出来，人是照着它
+          决定该不该去清理的，一个点只说「有」，说不出「几个」。 */}
+      <button
+        type="button"
+        className="rail-tool rail-tool--count"
+        onClick={() => setTmuxOpen(true)}
+        title={t('tmuxSessions.railTooltip', { n: tmuxTotal, memory: totalMemoryMb })}
+        aria-label={t('tmuxSessions.railTooltip', { n: tmuxTotal, memory: totalMemoryMb })}
+      >
+        <Terminal {...ICON} />
+        <span className="rail-tool-count">{tmuxTotal}</span>
+      </button>
+
       <button
         type="button"
         className="rail-tool"
@@ -239,6 +257,10 @@ function RailTools() {
             <TokenCalendarModal t={t} onClose={() => setCalendarOpen(false)} />,
             document.body
           )
+        : null}
+
+      {tmuxOpen
+        ? createPortal(<TmuxSessionsModal onClose={() => setTmuxOpen(false)} />, document.body)
         : null}
     </div>
   );

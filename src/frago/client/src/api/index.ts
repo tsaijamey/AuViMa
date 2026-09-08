@@ -1139,3 +1139,37 @@ export const saveCurrentAsProfile = withMode(
   (name: string): Promise<ApiResponse> => httpApi.saveCurrentAsProfile(name),
   (_name: string): Promise<ApiResponse> => Promise.resolve({ status: 'error', error: 'Not supported in pywebview mode' }),
 );
+
+/* 会话清点这三条都直接问本机 tmux，桌面壳（pywebview）里没有这条服务：返回空清单
+   而不是抛错——「一个都没有」是个合法答案，弹一个红框不是。 */
+export const getTmuxSessions = withMode(
+  (excerptChars?: number) => httpApi.getTmuxSessions(excerptChars),
+  (_excerptChars?: number) =>
+    Promise.resolve({
+      sessions: [],
+      total: 0,
+      total_memory_mb: 0,
+      cleanup_idle_hours: 1,
+    }),
+);
+
+export const closeTmuxSessions = withMode(
+  (names: string[]) => httpApi.closeTmuxSessions(names),
+  (_names: string[]) => Promise.resolve({ results: [], closed: 0, failed: 0 }),
+);
+
+export const setTmuxCleanupThreshold = withMode(
+  (hours: number) => httpApi.setTmuxCleanupThreshold(hours),
+  (hours: number) =>
+    Promise.resolve({
+      sessions: [],
+      total: 0,
+      total_memory_mb: 0,
+      cleanup_idle_hours: hours,
+    }),
+);
+
+export const getTmuxSessionCount = withMode(
+  () => httpApi.getTmuxSessionCount(),
+  () => Promise.resolve({ total: 0, total_memory_mb: 0 }),
+);

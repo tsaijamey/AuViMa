@@ -116,6 +116,10 @@ class WebuiSessionsConfig(BaseModel):
     max_resident: int = 10
     # 自最后一个终结 stop_reason 起、超过即关 tmux 的空闲秒数（Phase 2 用，默认 30min）。
     idle_timeout_secs: int = 1800
+    # 会话清点浮窗里「闲了多久算该清」的筛选门槛，单位小时。**与上面那条互不相干**：
+    # idle_timeout_secs 是后台自动杀会话的线，动它会改掉无人值守时的行为；这一条只是
+    # 人手动清理时清单默认勾选谁，改它不会让任何会话自己消失。
+    cleanup_idle_hours: float = 1.0
 
 
 class HookReviewConfig(BaseModel):

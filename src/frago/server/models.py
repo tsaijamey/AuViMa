@@ -273,6 +273,8 @@ class WebuiSessionsResponse(BaseModel):
 
     max_resident: int = 10
     idle_timeout_secs: int = 1800
+    # 手动清理浮窗的筛选门槛（小时）。不是自动回收那条线，见 WebuiSessionsConfig。
+    cleanup_idle_hours: float = 1.0
 
 
 class UserConfigResponse(BaseModel):
@@ -558,3 +560,68 @@ class CommunityRecipeInstallResponse(BaseModel):
     recipe_name: Optional[str] = None
     message: Optional[str] = None
     error: Optional[str] = None
+
+
+class TmuxSessionItem(BaseModel):
+    """清点浮窗里的一行：一场本机 tmux agent 会话。
+
+    ``last_stop_at`` / ``idle_secs`` 的口径是「最后一条终结记录的时刻」，NEVER 是
+    tmux 自己的活动时间——后者被界面重绘推着走，同一批会话两个口径实测差过四小时。
+    """
+
+    name: str
+    label: str
+    session_id: Optional[str] = None
+    stop_reason: Optional[str] = None
+    last_stop_at: Optional[str] = None
+    idle_secs: Optional[float] = None
+    excerpt: str = ""
+    memory_mb: int = 0
+    busy: bool = False
+    managed: bool = False
+
+
+class TmuxSessionsResponse(BaseModel):
+    """Response for GET /api/system/tmux-sessions"""
+
+    sessions: List[TmuxSessionItem] = Field(default_factory=list)
+    total: int = 0
+    total_memory_mb: int = 0
+    cleanup_idle_hours: float = 1.0
+
+
+class CloseTmuxSessionsRequest(BaseModel):
+    """Request body for POST /api/system/tmux-sessions/close"""
+
+    names: List[str] = Field(..., description="tmux session names to close, one by one")
+
+
+class CloseTmuxSessionsResult(BaseModel):
+    name: str
+    ok: bool
+    via: str = "tmux"
+    error: Optional[str] = None
+
+
+class CloseTmuxSessionsResponse(BaseModel):
+    """Response for POST /api/system/tmux-sessions/close"""
+
+    results: List[CloseTmuxSessionsResult] = Field(default_factory=list)
+    closed: int = 0
+    failed: int = 0
+
+
+class CleanupThresholdRequest(BaseModel):
+    """Request body for PUT /api/system/tmux-sessions/threshold"""
+
+    cleanup_idle_hours: float = Field(..., ge=0.0, le=720.0)
+
+
+class TmuxSessionsCountResponse(BaseModel):
+    """Response for GET /api/system/tmux-sessions/count —— 左下角那个数字。
+
+    刻意不带任何一场会话的内容：这条每分钟被问一次，读记录留给人点开浮窗那一刻。
+    """
+
+    total: int = 0
+    total_memory_mb: int = 0
