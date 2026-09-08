@@ -167,6 +167,7 @@ def _run_tmux_driver(
     native_session_id: bool = False,
     json_out: bool = False,
     source: str = "terminal",
+    tmux_target: str | None = None,
 ) -> None:
     """Drive a resident tmux TUI session via SessionLauncher (one turn).
 
@@ -181,9 +182,10 @@ def _run_tmux_driver(
     from frago.agent_driver.tmux_session import tmux_name_for
 
     sid = session_id or str(uuid.uuid4())
-    tmux_name = tmux_name_for(sid)
+    tmux_name = tmux_target or tmux_name_for(sid)
     if not quiet:
-        click.echo(f"[OK] tmux driver: agent={agent_type} session={sid}", err=json_out)
+        where = f" in {tmux_target}" if tmux_target else ""
+        click.echo(f"[OK] tmux driver: agent={agent_type} session={sid}{where}", err=json_out)
     if dry_run:
         # 诊断用途，没真跑过任何一轮 → NEVER 伪造一份停机摘要，只报到 stderr 后正常退出。
         click.echo("[Dry Run] Skip actual execution", err=json_out)
@@ -199,6 +201,7 @@ def _run_tmux_driver(
             env=env,
             native_session_id=native_session_id,
             timeout_s=float(timeout) if timeout > 0 else None,
+            tmux_target=tmux_target,
         )
     except KeyError:
         _emit_and_exit(
@@ -476,6 +479,15 @@ def agent() -> None:
     help="Run this one turn on a specific cli-agent (claude / opencode / codex). "
          "Omit to use the core selected in the WebUI wizard (claude when unset)."
 )
+@click.option(
+    "--tmux-target",
+    type=str,
+    default=None,
+    help="Run the agent inside this EXISTING tmux session instead of a fresh one "
+         "(e.g. frago-stage, the virtual desktop's terminal, so a person can watch it "
+         "work). The session must be showing an idle shell. When the turn ends the "
+         "agent is asked to quit; the session itself is never killed."
+)
 def agent_run(
     prompt: tuple,
     prompt_file,
@@ -494,6 +506,7 @@ def agent_run(
     api_key: str | None,
     use_profile: str | None,
     agent_type: str | None,
+    tmux_target: str | None,
 ):
     """
     Intelligent Agent: Execute one task turn in a resident tmux cli-agent session.
@@ -608,6 +621,7 @@ def agent_run(
         env=tmux_env or None,
         json_out=json_out,
         source=source,
+        tmux_target=tmux_target,
     )
 
 

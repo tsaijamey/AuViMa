@@ -10,7 +10,9 @@ NEVER 在本文件出现 ``if agent == "claude"``；一切 agent 差异经 Agent
 from __future__ import annotations
 
 import contextlib
+import shlex
 import subprocess
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -154,9 +156,15 @@ class TmuxAgentSession:
         poll_interval_s: float = 0.3,
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
+        tmux_target: str | None = None,
     ) -> None:
         self.session_id = session_id
         self.driver = driver
+        # 借住模式：agent 跑在一个**别人的、已经存在的** tmux 会话里（典型是虚拟桌面的
+        # 终端窗口 ``frago-stage``），而不是自己 new-session 一个。人看着桌面时看到的
+        # 就是这个 worker 在干活。借住的会话不归本对象所有：open() 不建、close() 不杀，
+        # 只把里面那个 agent 请出去，壳留给主人。
+        self.tmux_target = tmux_target
         # session_id 是否已是 agent 原生真实会话 id（透传给 driver 决定是否跳过派生）。
         self.native_session_id = native_session_id
         # 干净的 conv_key（如 ``feishu:oc_xxx``）。区别于 session_id（PA 路径恰好等于
@@ -173,11 +181,16 @@ class TmuxAgentSession:
         # conv_key 形如 ``feishu:oc_xxx`` 带冒号，原样当会话名会让 new-session 退非零、
         # 整条 channel 永远建不起会话。每个 session_id 仍稳定映射到唯一的名字
         # （claude --session-id 仍用原始 session_id 派生）。
-        self.tmux_name = tmux_name_for(session_id)
+        self.tmux_name = tmux_target if tmux_target else tmux_name_for(session_id)
         self._run = runner or _default_runner
         self._poll_interval_s = poll_interval_s
         self._sleep = sleep
         self._clock = clock
+        # 同一场会话可能被几个线程同时投喂（页面上人连发两句、主控与人各发一句）。
+        # 两个线程交错着往同一个输入框 send-keys，两句话会拼成一段谁也没说过的话。
+        # 锁只包住「打字 + 回车」那一小段，NEVER 包住整轮等待——否则第二句话要等
+        # 第一轮跑完（几十分钟）才排得进去，而 TUI 自己本来就会把新到的话排队。
+        self._submit_lock = threading.Lock()
         self.status: Literal["starting", "ready", "busy", "idle", "dead"] = "starting"
         # 最后一次成功抓到的可见 pane。抓屏偶发失败时顶上（本拍当作没有新内容），
         # 会话确认消失时作为末屏证据随异常/错误结果上报。None = 一次都没抓到过。
@@ -245,29 +258,17 @@ class TmuxAgentSession:
 
     # ── 生命周期 ───────────────────────────────────────────────────
     def open(self, *, ready_timeout_s: float = 30.0) -> None:
-        """起 detached 会话、投喂启动命令、等就绪、跑一次性异常处理。"""
+        """起 detached 会话、投喂启动命令、等就绪、跑一次性异常处理。
+
+        借住模式（``tmux_target`` 给定）不建会话：先确认那个会话在、前台是一个空闲的
+        shell，再把启动命令打进去。环境变量走命令行前缀（``env K=V …``），因为借住的
+        会话早就起好了，``new-session -e`` 那条路不存在。
+        """
         ctx = LaunchCtx(
             cwd=self.cwd,
             session_id=self.session_id,
             native_session_id=self.native_session_id,
         )
-        argv = [
-            "new-session",
-            "-d",
-            "-s",
-            self.tmux_name,
-            "-x",
-            str(self.width),
-            "-y",
-            str(self.height),
-            "-c",
-            self.cwd,
-        ]
-        # 把干净 conv_key 注入会话环境（tmux 3.0+ 支持 ``-e``）：会话内任何子命令
-        # （尤其 ``frago agent attach``）据 FRAGO_CONV_KEY 自解析自己归属哪个 conv，
-        # 把产出文件登记进该 conv 的 outbox。conv_key 缺省（WebUI 等非 PA 路径）时不注入。
-        if self.conv_key:
-            argv += ["-e", f"FRAGO_CONV_KEY={self.conv_key}"]
         # driver 自己声明的基线环境变量（如 opencode 的权限放行配置）先落，调用方
         # 传进来的 env（profile 翻译结果、自定义端点等）后落、同名键覆盖它——profile
         # 版本的配置自带权限放行，覆盖基线是预期行为。未声明 session_env 的 driver
@@ -277,12 +278,33 @@ class TmuxAgentSession:
             with contextlib.suppress(Exception):
                 merged_env.update(self.driver.session_env(ctx))
         merged_env.update(self.env)
-        # profile/自定义端点等注入的环境变量，同样经 new-session -e 落进会话环境。
-        for _k, _v in merged_env.items():
-            argv += ["-e", f"{_k}={_v}"]
-        self._tmux(*argv)
-        self.send_text(self.driver.launch_command(ctx))
-        self.send_keys("Enter")
+        if self.conv_key:
+            merged_env.setdefault("FRAGO_CONV_KEY", self.conv_key)
+
+        if self.tmux_target:
+            self._enter_target(ctx, merged_env)
+        else:
+            argv = [
+                "new-session",
+                "-d",
+                "-s",
+                self.tmux_name,
+                "-x",
+                str(self.width),
+                "-y",
+                str(self.height),
+                "-c",
+                self.cwd,
+            ]
+            # 把干净 conv_key 注入会话环境（tmux 3.0+ 支持 ``-e``）：会话内任何子命令
+            # （尤其 ``frago agent attach``）据 FRAGO_CONV_KEY 自解析自己归属哪个 conv，
+            # 把产出文件登记进该 conv 的 outbox。conv_key 缺省（WebUI 等非 PA 路径）时不注入。
+            # profile/自定义端点等注入的环境变量，同样经 new-session -e 落进会话环境。
+            for _k, _v in merged_env.items():
+                argv += ["-e", f"{_k}={_v}"]
+            self._tmux(*argv)
+            self.send_text(self.driver.launch_command(ctx))
+            self.send_keys("Enter")
         try:
             reached = self._wait_for(self.driver.ready_signal.matches, ready_timeout_s)
         except _SessionVanished as vanished:
@@ -312,6 +334,28 @@ class TmuxAgentSession:
         self.adopted = False
         self.last_active_at = datetime.now(UTC)
 
+    def _enter_target(self, ctx: LaunchCtx, env: dict[str, str]) -> None:
+        """借住模式的起步：确认会话在、前台空闲，再把启动命令打进那个 shell。"""
+        if not self.is_alive():
+            raise TmuxStartupError(
+                self.tmux_name, f"要借住的 tmux 会话 {self.tmux_name!r} 不存在"
+            )
+        live = self.has_live_agent()
+        if live is True:
+            raise TmuxStartupError(
+                self.tmux_name,
+                f"tmux 会话 {self.tmux_name!r} 的前台正跑着 {self.pane_command()!r}，"
+                "不是空闲的 shell，不能往里再起一个 agent",
+            )
+        parts = [f"cd {shlex.quote(self.cwd)}", "clear"]
+        if env:
+            prefix = " ".join(f"{k}={shlex.quote(v)}" for k, v in env.items())
+            parts.append(f"env {prefix} {self.driver.launch_command(ctx)}")
+        else:
+            parts.append(self.driver.launch_command(ctx))
+        self.send_text(" && ".join(parts))
+        self.send_keys("Enter")
+
     def _fail_startup(self, tail: str) -> NoReturn:
         """启动失败的统一收口：清半死的 tmux 壳、标死、抛 TmuxStartupError。"""
         with contextlib.suppress(Exception):
@@ -319,9 +363,50 @@ class TmuxAgentSession:
         self.status = "dead"
         raise TmuxStartupError(self.tmux_name, tail)
 
+    # 借住模式下请 agent 退场时，每一步之后最多等这么多拍再看前台回没回到 shell。
+    _QUIT_POLLS = 20
+    # 退场步骤。TUI 类 agent 都把「退出」做成两连击（claude：Ctrl-C 两下、Ctrl-D 两下，
+    # 第二下要在约一秒内到，否则只是又一次打断）——所以一步里的几个键连着发，
+    # 中间只隔一拍。2026-09-07 实测：两下 C-c 隔了六秒，claude 停在
+    # 「Interrupted · What should Claude do instead?」没退。
+    _QUIT_STEPS: tuple[tuple[str, ...], ...] = (
+        ("C-c", "C-c"),
+        ("text:/exit", "Enter"),
+        ("C-d", "C-d"),
+    )
+
     def close(self) -> None:
+        if self.tmux_target:
+            self._quit_agent_in_target()
+            self.status = "dead"
+            return
         self._tmux("kill-session", "-t", self.tmux_name)
         self.status = "dead"
+
+    def _quit_agent_in_target(self) -> None:
+        """把借住会话里的 agent 请出去，壳留给主人。
+
+        NEVER kill-session：那个会话是别人的（虚拟桌面的终端就靠它活着），杀了等于
+        把桌面的终端窗口连根拔掉。也 NEVER 往一个已经回到 shell 的窗口里再发退出键
+        ——``C-d`` 落在空 shell 上会让 shell 退出，tmux 会话随之消失，后果一样。
+        所以每发一步之前都先问「前台还是不是 agent」，问不出来（None）就停手：宁可
+        留一个还开着的 TUI 给人去关，也不能拿主人的会话冒险。
+        """
+        for step in self._QUIT_STEPS:
+            if self.has_live_agent() is not True:
+                return
+            for i, key in enumerate(step):
+                if i:
+                    self._sleep(self._poll_interval_s)
+                with contextlib.suppress(Exception):
+                    if key.startswith("text:"):
+                        self.send_text(key[len("text:"):])
+                    else:
+                        self.send_keys(key)
+            for _ in range(self._QUIT_POLLS):
+                self._sleep(self._poll_interval_s)
+                if self.has_live_agent() is not True:
+                    return
 
     def is_alive(self) -> bool:
         try:
@@ -406,7 +491,8 @@ class TmuxAgentSession:
                 baseline_marker = pre.marker if pre else None
 
         try:
-            self.driver.submit(self, prompt)
+            with self._submit_lock:
+                self.driver.submit(self, prompt)
         except subprocess.CalledProcessError:
             # 投喂本身退非零：会话若已消失，与轮询期消失同等处理；仍活着说明是别的
             # tmux 故障，原样上抛不掩盖。
@@ -516,6 +602,7 @@ class SessionLauncher:
         native_session_id: bool = False,
         conv_key: str | None = None,
         env: dict[str, str] | None = None,
+        tmux_target: str | None = None,
     ) -> TmuxAgentSession:
         driver = load_driver(agent_type)
         session = TmuxAgentSession(
@@ -526,6 +613,7 @@ class SessionLauncher:
             conv_key=conv_key,
             env=env,
             runner=self._runner,
+            tmux_target=tmux_target,
         )
         session.open()
         return session
@@ -542,6 +630,7 @@ class SessionLauncher:
         env: dict[str, str] | None = None,
         keep_alive: bool = False,
         timeout_s: float | None = None,
+        tmux_target: str | None = None,
     ) -> TurnResult:
         """开会话（或复用）→ 投喂一轮 → 取归一化结果。
 
@@ -549,6 +638,8 @@ class SessionLauncher:
         时保活会话供后续复用（Phase 3 warm pool 的雏形）。
 
         ``timeout_s`` 缺省 None = 本轮不设时间上限（见 ``TmuxAgentSession.send``）。
+        ``tmux_target`` 给定时 agent 借住在那个已有的 tmux 会话里跑，结束后只请它退场，
+        会话本身留着（见 ``TmuxAgentSession.tmux_target``）。
         """
         session = self.open_session(
             agent_type,
@@ -557,6 +648,7 @@ class SessionLauncher:
             native_session_id=native_session_id,
             conv_key=conv_key,
             env=env,
+            tmux_target=tmux_target,
         )
         try:
             return session.send(prompt, timeout_s=timeout_s)

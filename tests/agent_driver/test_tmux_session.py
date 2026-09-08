@@ -418,6 +418,163 @@ def test_launch_command_receives_ctx() -> None:
     assert "--dangerously-skip-permissions" in cmd
 
 
+# ── 借住模式：agent 跑在别人的 tmux 会话里（虚拟桌面的终端就是这么用的）──────
+# 那个会话不归本对象所有：open() 不建、close() 不杀，只请里面的 agent 退场。
+# 杀了它等于把桌面的终端窗口连根拔掉——人正看着的画面直接黑掉。
+
+
+class _HostTmux:
+    """借住场景的 tmux 替身：会话早就在，前台跑什么由脚本说了算。"""
+
+    def __init__(self, panes: list[str], foreground: list[str]) -> None:
+        self._panes = list(panes)
+        self._fg = list(foreground)
+        self.commands: list[list[str]] = []
+
+    def __call__(self, argv: list[str]) -> str:
+        self.commands.append(argv)
+        verb = argv[1] if len(argv) > 1 else ""
+        if verb == "capture-pane":
+            return self._panes.pop(0) if len(self._panes) > 1 else self._panes[0]
+        if verb == "display-message":
+            return (self._fg.pop(0) if len(self._fg) > 1 else self._fg[0]) + "\n"
+        return ""
+
+    def verbs(self) -> list[str]:
+        return [c[1] for c in self.commands if len(c) > 1]
+
+
+def test_attach_mode_enters_existing_session_without_new_session() -> None:
+    host = _HostTmux(panes=["READY"], foreground=["zsh"])
+    sess = TmuxAgentSession(
+        "s", _echo_driver(), cwd="/home/me", runner=host, sleep=_no_sleep,
+        env={"FRAGO_AGENT_ROLE": "worker"}, tmux_target="frago-stage",
+    )
+    sess.open(ready_timeout_s=5)
+    assert sess.status == "ready"
+    assert sess.tmux_name == "frago-stage"
+    assert "new-session" not in host.verbs()
+    typed = [c for c in host.commands if c[1:2] == ["send-keys"] and "-l" in c][0]
+    line = typed[-1]
+    # 先进工作目录，再把环境变量以前缀方式带上启动命令——借住的会话早起好了，
+    # new-session -e 那条路不存在。
+    assert line.startswith("cd /home/me && clear && env FRAGO_AGENT_ROLE=worker echo-agent")
+    assert all(c[3] == "frago-stage" for c in host.commands if c[1] == "send-keys")
+
+
+def test_attach_mode_refuses_a_busy_foreground() -> None:
+    from frago.agent_driver.tmux_session import TmuxStartupError
+
+    host = _HostTmux(panes=["whatever"], foreground=["2.1.250"])
+    sess = TmuxAgentSession(
+        "s", _echo_driver(), cwd="/tmp", runner=host, sleep=_no_sleep, tmux_target="frago-stage"
+    )
+    with pytest.raises(TmuxStartupError) as ei:
+        sess.open(ready_timeout_s=5)
+    assert "不是空闲的 shell" in ei.value.tail
+    # 拒绝之后也 NEVER 杀主人的会话。
+    assert "kill-session" not in host.verbs()
+
+
+def test_attach_mode_close_quits_agent_but_never_kills_session() -> None:
+    # 前台先是 agent，两连击 C-c 之后回到 shell。
+    host = _HostTmux(panes=["READY"], foreground=["2.1.250", "2.1.250", "zsh"])
+    sess = TmuxAgentSession(
+        "s", _echo_driver(), cwd="/tmp", runner=host, sleep=_no_sleep, tmux_target="frago-stage"
+    )
+    sess.close()
+    assert sess.status == "dead"
+    assert "kill-session" not in host.verbs()
+    keys = [c[-1] for c in host.commands if c[1:2] == ["send-keys"]]
+    # 退出是两连击：两个 C-c 连着发（中间只隔一拍），不是发一个等六秒再发一个。
+    assert keys[:2] == ["C-c", "C-c"]
+    # 回到 shell 之后不再发任何键：C-d 落在空 shell 上会让整个会话消失。
+    assert "C-d" not in keys and "/exit" not in keys
+
+
+def test_attach_mode_close_escalates_to_exit_command_then_ctrl_d() -> None:
+    # C-c 两连击没让它退（还在跑），再打 /exit，还不退再 C-d 两连击。
+    # 前台：C-c 步骤内 1 次 + 轮询 20 次都还是 agent，/exit 步骤内 1 次 + 20 次，C-d 步骤后回 shell。
+    fg = ["2.1.250"] * (1 + 20 + 1 + 20 + 1) + ["zsh"]
+    host = _HostTmux(panes=["READY"], foreground=fg)
+    sess = TmuxAgentSession(
+        "s", _echo_driver(), cwd="/tmp", runner=host, sleep=_no_sleep, tmux_target="frago-stage"
+    )
+    sess.close()
+    sent = [c for c in host.commands if c[1:2] == ["send-keys"]]
+    keys = [c[-1] for c in sent]
+    assert keys[:2] == ["C-c", "C-c"]
+    assert "/exit" in keys and keys[keys.index("/exit") + 1] == "Enter"
+    assert keys[-2:] == ["C-d", "C-d"]
+    assert "kill-session" not in host.verbs()
+
+
+def test_attach_mode_close_does_nothing_when_shell_already_in_front() -> None:
+    host = _HostTmux(panes=["READY"], foreground=["zsh"])
+    sess = TmuxAgentSession(
+        "s", _echo_driver(), cwd="/tmp", runner=host, sleep=_no_sleep, tmux_target="frago-stage"
+    )
+    sess.close()
+    assert not any(c[1:2] == ["send-keys"] for c in host.commands)
+    assert "kill-session" not in host.verbs()
+
+
+def test_attach_mode_close_stops_when_foreground_is_unknown() -> None:
+    # 问不出前台是什么 → 停手。宁可留一个开着的 TUI 给人关，也不拿主人的会话冒险。
+    host = _HostTmux(panes=["READY"], foreground=[""])
+    sess = TmuxAgentSession(
+        "s", _echo_driver(), cwd="/tmp", runner=host, sleep=_no_sleep, tmux_target="frago-stage"
+    )
+    sess.close()
+    assert not any(c[1:2] == ["send-keys"] for c in host.commands)
+
+
+def test_attach_mode_startup_failure_never_kills_host_session() -> None:
+    from frago.agent_driver.tmux_session import TmuxStartupError
+
+    host = _HostTmux(panes=["never ready"], foreground=["zsh"])
+    clock = iter([0.0, 10.0, 10.0])
+    sess = TmuxAgentSession(
+        "s", _echo_driver(), cwd="/tmp", runner=host, sleep=_no_sleep,
+        clock=lambda: next(clock), tmux_target="frago-stage",
+    )
+    with pytest.raises(TmuxStartupError):
+        sess.open(ready_timeout_s=1)
+    assert "kill-session" not in host.verbs()
+
+
+def test_concurrent_sends_do_not_interleave_keystrokes() -> None:
+    """两个线程同时投喂同一场会话：打字 + 回车那一段互斥，两句话不会拼成一句。"""
+    import threading
+
+    order: list[str] = []
+    gate = threading.Event()
+
+    def slow_submit(s: TmuxAgentSession, p: str) -> None:
+        order.append(f"begin {p}")
+        gate.wait(timeout=2)
+        s.send_text(p)
+        s.send_keys("Enter")
+        order.append(f"end {p}")
+
+    driver = _echo_driver()
+    driver = __import__("dataclasses").replace(driver, submit=slow_submit)
+    fake = FakeTmux(["> ", "a\nDONE", "a\nDONE"])
+    sess = TmuxAgentSession("s", driver, cwd="/tmp", runner=fake, sleep=_no_sleep)
+
+    t1 = threading.Thread(target=lambda: sess.send("one", timeout_s=5))
+    t2 = threading.Thread(target=lambda: sess.send("two", timeout_s=5))
+    t1.start()
+    t2.start()
+    gate.set()
+    t1.join(5)
+    t2.join(5)
+    # 每个 begin 后面紧跟它自己的 end：没有第二个 begin 插进来。
+    for i in range(0, len(order), 2):
+        assert order[i].startswith("begin ")
+        assert order[i + 1] == order[i].replace("begin", "end")
+
+
 # ── 会话中途消失：抓屏退非零 MUST 收口，NEVER 裸 CalledProcessError ────────
 # 现场：`frago agent start opencode --name k3trainer` 整页栈追踪，末行是
 # `tmux capture-pane ... returned non-zero exit status 1`。opencode 在等就绪期间
