@@ -50,12 +50,17 @@ def _run_frago_agent(
     *,
     agent_type: str = "claude",
     timeout: int = 0,
+    tmux_target: str | None = None,
 ) -> int:
     """Run frago agent as subprocess with the given prompt.
 
     ``agent_type`` defaults to claude (unchanged behavior); pass another agent
     to drive a different cli-agent recipe. 后端只剩 tmux（spec 20260607 Phase 5），
     故不再有 driver 选择。
+
+    ``tmux_target`` 给定时 worker 借住在那个已有的 tmux 会话里跑（虚拟桌面的终端
+    ``frago-stage`` 就是这么用的：人在桌面上看着 worker 写配方）。原样透传给
+    ``frago agent --tmux-target``，本函数不碰 tmux。
 
     ``timeout`` 缺省 0 = 这一轮不设墙钟上限，跟 ``frago agent`` 对外宣告的契约
     同一个缺省。写规格 / 写代码这一轮该跑多久由任务决定：一份认真的任务书要
@@ -99,6 +104,8 @@ def _run_frago_agent(
         # 收尾（kill-session）照常跑。
         if timeout > 0:
             cmd += ["--timeout", str(timeout)]
+        if tmux_target:
+            cmd += ["--tmux-target", tmux_target]
 
         result = subprocess.run(cmd)
         return result.returncode
@@ -107,7 +114,8 @@ def _run_frago_agent(
 
 
 def _plan_into(name: str, prompt_text: str, spec_path: Path,
-               *, type_: str | None, runtime: str | None, timeout: int = 0) -> None:
+               *, type_: str | None, runtime: str | None, timeout: int = 0,
+               tmux_target: str | None = None) -> None:
     """Decide the module's shape and write it down. Shared by plan and create.
 
     One implementation on purpose: the two commands used to be two paths to a
@@ -167,7 +175,7 @@ def _plan_into(name: str, prompt_text: str, spec_path: Path,
 
 填完不要自己写代码。
 """
-    if _run_frago_agent(agent_prompt, timeout=timeout) != 0:
+    if _run_frago_agent(agent_prompt, timeout=timeout, tmux_target=tmux_target) != 0:
         click.echo("Error: Agent failed to generate spec", err=True)
         sys.exit(1)
 
@@ -191,6 +199,14 @@ _BACKGROUND_HINT = (
     "[Note] 这一轮不设时间上限，认真的任务书要 worker 写十几到几十分钟。"
     "agent 调用方 MUST 后台起（Bash 工具 run_in_background: true）——"
     "前台被 harness 的 10 分钟上限砍掉时，worker 不会跟着停，还在写同一个目录。"
+)
+
+#: 让 worker 跑在一个已有的 tmux 会话里（典型是虚拟桌面的终端 frago-stage）。人在
+#: 桌面上看到的就是这个 worker 在写配方。透传给 `frago agent --tmux-target`。
+_TMUX_TARGET_HELP = (
+    'Run the worker inside this EXISTING tmux session (e.g. frago-stage, the '
+    'virtual desktop terminal) so a person can watch it work. The session must be '
+    'showing an idle shell; it is never killed, only the agent is asked to quit.'
 )
 
 
@@ -226,8 +242,9 @@ _BACKGROUND_HINT = (
     help='Overwrite existing spec.md'
 )
 @click.option('--timeout', type=int, default=0, help=_TIMEOUT_HELP)
+@click.option('--tmux-target', type=str, default=None, help=_TMUX_TARGET_HELP)
 def plan_recipe(name: str, prompt: str | None, prompt_file: str | None, type_: str | None,
-                runtime: str | None, force: bool, timeout: int):
+                runtime: str | None, force: bool, timeout: int, tmux_target: str | None):
     """
     Generate a recipe spec via agent
 
@@ -272,7 +289,8 @@ def plan_recipe(name: str, prompt: str | None, prompt_file: str | None, type_: s
     click.echo(f"[Plan] Generating spec for recipe '{name}'...")
     click.echo(f"  Directory: {recipe_dir}")
     click.echo(_BACKGROUND_HINT, err=True)
-    _plan_into(name, prompt_text, spec_path, type_=type_, runtime=runtime, timeout=timeout)
+    _plan_into(name, prompt_text, spec_path, type_=type_, runtime=runtime, timeout=timeout,
+               tmux_target=tmux_target)
 
     if spec_path.exists():
         click.echo(f"[OK] Spec written: {spec_path}")
@@ -310,8 +328,9 @@ def plan_recipe(name: str, prompt: str | None, prompt_file: str | None, type_: s
     help='Overwrite existing recipe.md and script'
 )
 @click.option('--timeout', type=int, default=0, help=_TIMEOUT_HELP)
+@click.option('--tmux-target', type=str, default=None, help=_TMUX_TARGET_HELP)
 def create_recipe(name: str, prompt: str | None, prompt_file: str | None, spec_path: str | None,
-                  force: bool, timeout: int):
+                  force: bool, timeout: int, tmux_target: str | None):
     """
     Create a recipe via agent from spec or prompt
 
@@ -380,8 +399,13 @@ def create_recipe(name: str, prompt: str | None, prompt_file: str | None, spec_p
         spec_file = recipe_dir / "spec.md"
         if not spec_file.exists() or force:
             click.echo(f"[Plan] 先定规格：{spec_file}")
-            _plan_into(name, user_prompt, spec_file, type_=None, runtime=None, timeout=timeout)
+            _plan_into(name, user_prompt, spec_file, type_=None, runtime=None, timeout=timeout,
+                       tmux_target=tmux_target)
         spec_content = spec_file.read_text(encoding="utf-8")
+        # 写码那一轮的提示词里要写规格在哪。两步式在上面的 else 分支里定了它，一步式
+        # 曾经没定——规格和模板都落盘之后才在拼提示词时炸掉，写码的 worker 根本没起，
+        # 而人看到的是「create 失败」（2026-09-07 在虚拟桌面里实测）。
+        resolved_spec = spec_file
 
     # Lay the template down before the agent is asked for anything. Creation
     # used to write no files at all: it handed an agent a prompt and whatever
@@ -490,7 +514,7 @@ Spec 内容（位于 {resolved_spec}）：
     click.echo(f"[Create] Creating recipe '{name}'...")
     click.echo(f"  Directory: {recipe_dir}")
 
-    exit_code = _run_frago_agent(agent_prompt, timeout=timeout)
+    exit_code = _run_frago_agent(agent_prompt, timeout=timeout, tmux_target=tmux_target)
 
     if exit_code != 0:
         click.echo("Error: Agent failed to create recipe", err=True)

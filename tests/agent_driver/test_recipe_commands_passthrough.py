@@ -75,6 +75,55 @@ def test_explicit_cap_is_handed_to_the_callee(captured) -> None:
     assert captured["kwargs"].get("timeout") is None
 
 
+def test_tmux_target_is_handed_to_the_worker(captured) -> None:
+    """--tmux-target 原样透传：worker 借住在那个会话里跑（桌面终端就是这么用的）。"""
+    recipe_commands._run_frago_agent("hi", tmux_target="frago-stage")
+    cmd = captured["cmd"]
+    assert cmd[cmd.index("--tmux-target") + 1] == "frago-stage"
+
+
+def test_no_tmux_target_by_default(captured) -> None:
+    recipe_commands._run_frago_agent("hi")
+    assert "--tmux-target" not in captured["cmd"]
+
+
+def test_one_step_create_reaches_the_code_worker(tmp_path, monkeypatch) -> None:
+    """一步式 create（--prompt）在规格与模板落盘之后必须真的派写码那一轮。
+
+    从前这条路在拼写码提示词时引用了一个只在两步式里赋值的变量，Python 当场炸掉：
+    规格写好了、模板生成了、写码的 worker 却从没起过，人看到的只是「create 失败」。
+    """
+    from click.testing import CliRunner
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    prompts: list[str] = []
+
+    def fake_plan(name, prompt_text, spec_path, **_kw):
+        spec_path.parent.mkdir(parents=True, exist_ok=True)
+        spec_path.write_text(
+            "# spec\n```yaml\ntype: atomic\nruntime: python\nmodes:\n  now:\n"
+            "default_mode: now\nimports: {}\npage: false\n```\n",
+            encoding="utf-8",
+        )
+
+    def fake_agent(prompt, **_kw):
+        prompts.append(prompt)
+        return 0
+
+    monkeypatch.setattr(recipe_commands, "_plan_into", fake_plan)
+    monkeypatch.setattr(recipe_commands, "_run_frago_agent", fake_agent)
+
+    result = runner_result = CliRunner().invoke(
+        recipe_commands.create_recipe, ["demo_one_step", "--prompt", "打印当前时间"]
+    )
+    assert "NameError" not in (runner_result.output or "")
+    assert not isinstance(result.exception, NameError), result.exception
+    # 写码那一轮确实派了，而且提示词里写着规格在哪。
+    assert len(prompts) == 1
+    assert "spec.md" in prompts[0]
+    assert "demo_one_step" in prompts[0]
+
+
 def test_plan_and_create_tell_the_caller_to_go_background() -> None:
     """不知情的 agent 在 --help 里就该读到「后台跑」，而不是第 10 分钟被砍才猜。"""
     for cmd in (recipe_commands.plan_recipe, recipe_commands.create_recipe):
@@ -89,8 +138,9 @@ def test_plan_forwards_its_cap_to_the_worker(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     seen: dict[str, int] = {}
 
-    def fake_agent(_prompt, *, agent_type="claude", timeout=0):
+    def fake_agent(_prompt, *, agent_type="claude", timeout=0, tmux_target=None):
         seen["timeout"] = timeout
+        seen["tmux_target"] = tmux_target
         return 0
 
     monkeypatch.setattr(recipe_commands, "_run_frago_agent", fake_agent)
@@ -99,12 +149,20 @@ def test_plan_forwards_its_cap_to_the_worker(tmp_path, monkeypatch) -> None:
     result = runner.invoke(recipe_commands.plan_recipe, ["demo", "--prompt", "x"])
     assert result.exit_code == 0, result.output
     assert seen["timeout"] == 0
+    assert seen["tmux_target"] is None
 
     result = runner.invoke(
         recipe_commands.plan_recipe, ["demo", "--prompt", "x", "--force", "--timeout", "45"]
     )
     assert result.exit_code == 0, result.output
     assert seen["timeout"] == 45
+
+    result = runner.invoke(
+        recipe_commands.plan_recipe,
+        ["demo", "--prompt", "x", "--force", "--tmux-target", "frago-stage"],
+    )
+    assert result.exit_code == 0, result.output
+    assert seen["tmux_target"] == "frago-stage"
 
 
 # ── opencode driver 端到端契约(Phase 0 实测坑全部进 driver) ──────────

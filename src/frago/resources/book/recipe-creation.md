@@ -49,6 +49,27 @@ tmux 会话收掉。**NEVER 从外面套杀手**（`timeout 600 frago recipe pla
 
 同一条纪律的上游版本见 `frago book agent-worker-driving`。
 
+### 让人看着 worker 写：`--tmux-target frago-stage`
+
+plan / create 各派的那个 worker 缺省跑在自己新开的 tmux 会话里，人看不见。
+加上 `--tmux-target <已有会话名>`，worker 就**借住**在那个会话里跑——给它
+虚拟桌面终端窗口盯着的那个会话（`frago-stage`），人在桌面上看到的就是 worker
+在写规格、填模板、跑 validate。
+
+```bash
+frago recipe create <名字> --prompt-file <需求.md> --tmux-target frago-stage
+```
+
+三条边界：那个会话 MUST 已经存在、前台是空闲的 shell（跑着别的东西会当场拒）；
+一轮结束时只请 agent 退场（两次 Ctrl-C），**会话本身从不被杀**——它是桌面的终端，
+杀了等于把窗口连根拔掉；两轮（plan 一轮、create 一轮）在同一个终端里先后出现，
+中间那段是模板生成，画面上只有一行 `[Template]`。
+
+WebUI 配方页的「创建配方」按钮走的就是这条路：它起一场隐藏的「导演」会话，
+导演用这条命令把 worker 放进桌面终端，再用 `frago desktop browser open` 让配方页面
+在桌面浏览器里长出来。人在桌面页的输入行里追加的话先到导演，由它转达给 worker。
+桌面那一侧的约定见 `frago book desktop-usage` 的「人类输入行」。
+
 ### 一、plan 产出什么
 
 一份 `spec.md`，分两半。
