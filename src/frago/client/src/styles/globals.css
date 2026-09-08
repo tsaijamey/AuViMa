@@ -758,7 +758,8 @@ a:not(.btn):not(.nav-tab):not(.sidebar-github-link):hover {
 
 .rail-item-label {
   min-width: 0;
-  font-size: var(--font-size-md);
+  /* 与中间会话列表同号（13px）。栏里的字不是标题，比列表大一号只会显得喧宾夺主。 */
+  font-size: var(--font-size-base);
   font-weight: var(--font-weight-normal);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -802,8 +803,11 @@ a:not(.btn):not(.nav-tab):not(.sidebar-github-link):hover {
   position: absolute;
   bottom: calc(100% + 6px);
   left: 4px;
-  width: 232px;
-  padding: 6px;
+  /* 按内容定宽。字号跟着 --font-scale 走、文案跟着语言走，写死一个像素数迟早装不下。 */
+  width: max-content;
+  min-width: 240px;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 8px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
@@ -815,10 +819,24 @@ a:not(.btn):not(.nav-tab):not(.sidebar-github-link):hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 12px;
   height: 34px;
-  padding: 0 8px;
+  padding: 0 10px;
   border-radius: var(--radius-sm);
+}
+
+/* 真挤不下时让标签先让位，分段控件与状态值保持完整——它们才是要点的东西。 */
+.rail-popover-row > .rail-popover-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-popover-row > .rail-seg,
+.rail-popover-row > .rail-popover-value {
+  flex-shrink: 0;
 }
 
 .rail-popover-label {
@@ -862,6 +880,7 @@ a:not(.btn):not(.nav-tab):not(.sidebar-github-link):hover {
   border: none;
   background: transparent;
   border-radius: 4px;
+  white-space: nowrap;
   color: var(--text-muted);
   font-size: var(--font-size-sm);
   cursor: pointer;

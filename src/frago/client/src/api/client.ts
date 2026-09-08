@@ -287,6 +287,21 @@ export async function runRecipeAsync(
   });
 }
 
+/**
+ * 在图形界面里创建配方：起一场「导演」会话，回的地址指向虚拟桌面（带人类输入行）。
+ * 人在那扇窗口里看着 worker 在终端里写配方、页面在浏览器窗口里长出来，中途还能追加需求。
+ */
+export async function forgeRecipe(body: {
+  requirement: string;
+  page: boolean;
+  name?: string;
+}): Promise<{ session_id: string; desktop_url: string; recipe_name: string | null }> {
+  return fetchApi('/recipes/forge', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
 // ============================================================
 // Tasks API
 // ============================================================

@@ -6,6 +6,7 @@ Provides endpoints for listing, viewing, and executing recipes.
 from typing import List
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from frago.server.models import (
     RecipeItemResponse,
@@ -245,6 +246,59 @@ async def run_recipe_async(name: str, request: RecipeRunRequest = None):
         "execution_id": execution_id,
         "status": "pending",
         "poll_url": f"/api/executions/{execution_id}",
+    }
+
+
+# ============================================================
+# 在图形界面里创建配方（导演会话 + 虚拟桌面）
+# ============================================================
+
+
+class RecipeForgeRequest(BaseModel):
+    """``POST /recipes/forge`` 的请求体。
+
+    ``requirement`` 是人用自己的话写的需求；``page`` 是要不要界面（不要就做后端纯
+    数据配方）；``name`` 可选，不给由导演定名。
+    """
+
+    requirement: str
+    page: bool = True
+    name: str | None = None
+
+
+@router.post("/recipes/forge", status_code=201)
+async def forge_recipe(request: RecipeForgeRequest) -> dict:
+    """起一场「导演」会话，让人在虚拟桌面上看着配方被做出来。
+
+    回的是导演会话的编号和一个桌面地址：页面拿地址开一扇独立窗口，桌面页在那个
+    地址下会露出人类输入行，人打的字排进导演的队列（``/workbench/sessions/{sid}/send``
+    带 ``wait: false``）。
+
+    三类拒绝各有各的意思：桌面没在跑 → 409（导演不会替人拉起它）；配方名不合法或已
+    存在 → 400；这台机器挑不了 claude → 400。
+    """
+    import asyncio
+
+    from frago.server.services import recipe_forge, workbench_agents
+
+    try:
+        launch = await asyncio.to_thread(
+            recipe_forge.start,
+            request.requirement,
+            page=request.page,
+            name=request.name,
+        )
+    except recipe_forge.DesktopNotRunning as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except (recipe_forge.BadRecipeName, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except workbench_agents.AgentUnavailable as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    return {
+        "session_id": launch.session_id,
+        "desktop_url": launch.desktop_url,
+        "recipe_name": launch.recipe_name,
     }
 
 

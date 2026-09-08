@@ -5,8 +5,9 @@ import { useAutoRefresh } from '@/hooks/useAutoRefresh';
 import EmptyState from '@/components/ui/EmptyState';
 import RecipeTabs from './RecipeTabs';
 import CommunityRecipeList from './CommunityRecipeList';
+import RecipeForgeModal from './RecipeForgeModal';
 import type { RecipeItem } from '@/types/pywebview';
-import { Package, Search, X, ChevronDown, ChevronRight, Workflow, Box, LayoutGrid, List } from 'lucide-react';
+import { Package, Search, X, ChevronDown, ChevronRight, Workflow, Box, LayoutGrid, List, Wand2 } from 'lucide-react';
 
 interface RecipeCardProps {
   recipe: RecipeItem;
@@ -158,6 +159,7 @@ export default function RecipeList() {
   const [atomicExpanded, setAtomicExpanded] = useState(true);
   const [workflowExpanded, setWorkflowExpanded] = useState(true);
   const [activeTab, setActiveTab] = useState<'local' | 'community'>('local');
+  const [forgeOpen, setForgeOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
     try {
       return (localStorage.getItem('recipeView') as 'grid' | 'list') || 'grid';
@@ -216,7 +218,18 @@ export default function RecipeList() {
           <h1 className="cs-title">{t('recipes.title')}</h1>
           <p className="cs-subtitle">{t('recipes.pageDesc')}</p>
         </div>
+        {/* 创建配方：过去只能在命令行下开发配方，这个入口把它搬进图形界面——
+            人写需求，然后在虚拟桌面那扇窗口里看着配方被做出来。 */}
+        <button
+          type="button"
+          className="btn btn-primary flex items-center gap-2"
+          onClick={() => setForgeOpen(true)}
+        >
+          <Wand2 size={16} />
+          {t('recipes.forge.button')}
+        </button>
       </div>
+      {forgeOpen && <RecipeForgeModal onClose={() => setForgeOpen(false)} />}
 
       {/* Tab Navigation */}
       <RecipeTabs
