@@ -303,13 +303,17 @@ def cli(ctx, gui: bool, gui_background: bool, debug: bool, timeout: int, host: s
         proxy_username: str | None, proxy_password: str | None,
         no_proxy: bool, target_id: str | None):
     """
-    Frago - AI Agent Multi-Runtime Automation Infrastructure
+    Frago - agent OS: the environment your CLI agent runs in
 
     \b
-    Three Core Systems:
-      - Run System    Persistent task context, records complete exploration process
-      - Recipe System Metadata-driven reusable automation scripts
-      - browser automation    Browser automation low-level capabilities
+    Any core plugs in (Claude Code / codex / opencode / codebuddy). On top of it,
+    five pillars for the agent:
+      - Session companion  hook rules + a lightweight reviewer keep it on track (hook-rules, book)
+      - Hands & eyes       act in the real environment (browser, desktop, apps, view)
+      - Memory & recall    def, context, session search, todo
+      - Recipes            once it works, it freezes into code (recipe, daemon, market)
+      - Boundaries         beyond this session: agent, channel/reply, remote, schedule
+    The Web UI, desktop client, profiles and market are for people.
 
     \b
     GUI Mode (deprecated):

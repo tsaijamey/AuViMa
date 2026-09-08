@@ -15,7 +15,10 @@ def workspace_group():
 
     \b
     Workspace collects agent resources (skills, CLAUDE.md, project memories)
-    from your local machine and syncs them across devices via `frago sync`.
+    from your local machine into ~/.frago/workspaces/ (`frago workspace collect`).
+    They reach other devices with the rest of ~/.frago: back it up from the
+    Web UI's Data Repository page (`frago start`, then 数据仓库), which commits
+    and pushes ~/.frago to your own git remote.
     """
     pass
 
@@ -94,13 +97,13 @@ def workspace_set_scan_roots(roots: tuple[str, ...]):
     click.echo(f"Scan roots set to: {', '.join(roots)}")
     click.echo("")
     click.echo("Run 'frago workspace list' to see discovered projects.")
-    click.echo("Run 'frago sync' to collect and sync workspace resources.")
+    click.echo("Run 'frago workspace collect' to gather their resources into ~/.frago/workspaces/.")
 
 
 @workspace_group.command("collect", cls=AgentFriendlyCommand)
 @click.option("--dry-run", is_flag=True, help="Preview what would be collected")
 def workspace_collect(dry_run: bool):
-    """Collect workspace resources without syncing"""
+    """Collect workspace resources into ~/.frago/workspaces/"""
     config = load_config()
     scan_roots = config.workspace_scan_roots
     exclude_patterns = config.workspace_exclude_patterns
@@ -157,5 +160,5 @@ def workspace_pending():
     click.echo("")
     click.echo(f"Created at: {plan.created_at.strftime('%Y-%m-%d %H:%M:%S UTC')}")
     click.echo("")
-    click.echo("These actions will be executed automatically on next 'frago sync'.")
-    click.echo("Or run 'frago workspace deploy' to execute now.")
+    click.echo("Nothing applies these automatically in this version: the cross-device")
+    click.echo("sync that produced them has been retired. Apply or discard them by hand.")

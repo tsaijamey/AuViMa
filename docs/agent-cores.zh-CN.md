@@ -296,6 +296,6 @@ opencode 带 `ses_` 前缀。**前两家的编号空间天生重叠**——想�
 
 ## 相关文档
 
-- [概念](concepts.zh-CN.md) — frago 的四支柱与会话记录模型
+- [概念](concepts.zh-CN.md) — 配方、提示注入与会话记录模型；agent 面的支柱划分见 `frago book frago-principle-os`
 - [用户指南](user-guide.zh-CN.md) — 日常命令
 - [开发者文档](developer.zh-CN.md) — driver 契约与扩展方式

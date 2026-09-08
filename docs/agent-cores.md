@@ -333,6 +333,6 @@ override it per run with `frago agent --agent-type <core>`.
 
 ## Related
 
-- [Concepts](concepts.md) — frago's four pillars and the session record model
+- [Concepts](concepts.md) — recipes, hint injection and the session record model; how the agent-facing pillars fit together is in `frago book frago-principle-os`
 - [User Guide](user-guide.md) — everyday commands
 - [Developer](developer.md) — the driver contract and how to extend it
