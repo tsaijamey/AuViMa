@@ -92,6 +92,8 @@ HTML 由你自己产出，调试走 `frago browser`（`file://` 打开、`get-co
 
 **桌面页面是只读显示器。** 它自己不产生任何操作，画面变化全部来自指令。页面断线会自行重连，重连后补发最近状态，所以录制中抖一下不会永久黑屏。标题栏上那三颗红黄绿是纯装饰，**点不了**——它们不在可寻址元素名单里，关窗口一律走 `window close`。
 
+**人类输入行是唯一的例外，而且默认不存在。** 地址带 `?userInput=true&session=<会话编号>` 时，桌面页顶部露出一条输入行；不带就没有，录制画面里不会出现它。人在里面打的字**不进桌面终端**——终端里跑着的是 worker，人的话要先到「导演」那里：输入行发的是 frago 服务的会话发送接口（`POST /api/workbench/sessions/<编号>/send`，`wait: false` 只排队不等答），排进地址里那场隐藏会话的队列，由它决定怎么转达（通常是 `focus term` → `type "<原话>"` → `key Enter`，把话排进 worker 的 TUI）。这条链是「WebUI 创建配方」的展示面：桌面是显示器，隐藏会话是遥控器，人对着遥控器说话。worker 怎么进桌面终端见 `frago book recipe-creation` 的 `--tmux-target`。
+
 ## 不要做
 
 - 不要去找那个 `aos` 脚本自己跑（不管是配方目录里那份旧的，还是包里的 `python -m frago.desktop.aos`）——`frago desktop` 就是同一份实现的正式入口，回执里的提示也按这个名字写

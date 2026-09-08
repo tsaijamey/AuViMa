@@ -117,14 +117,26 @@ def start(agent_type: str, cwd: str, prompt: str) -> PendingLaunch:
     挑不了的那一家在这里就拦下（:class:`AgentUnavailable`）：拦不住的话人要等上一分钟
     才看得出这一场根本起不来。
     """
+    return start_with_id(agent_type, cwd, prompt, session_id=None)
+
+
+def start_with_id(
+    agent_type: str, cwd: str, prompt: str, *, session_id: str | None
+) -> PendingLaunch:
+    """同 :func:`start`，但编号由调用方给（只对编号由页面定的那一家有意义）。
+
+    给「第一句话里要写自己的编号」的场合用：配方创建的导演任务书里写着需求文件落在
+    以会话编号命名的目录下，而第一句话是起会话那一刻投进去的，编号必须在那之前就定。
+    编号由 agent 自己分配的那两家（codex / opencode）给了也用不上，照旧走认领。
+    """
     agent = workbench_agents.require_selectable(agent_type)
     directory = str(Path(cwd).expanduser()) if cwd.strip() else str(Path.home())
 
     if agent.id_origin == "caller":
         # 编号页面这边定：claude 拿 ``--session-id`` 用它新建，记录自己落到该去的地方，
         # 下一次扫描它就是一行普通会话。
-        launch_id = str(uuid.uuid4())
-        session_id: str | None = launch_id
+        launch_id = session_id or str(uuid.uuid4())
+        session_id = launch_id
         native = True
     else:
         # 编号得等认领。把手带前缀，形状上就不会被当成某一家的会话编号。

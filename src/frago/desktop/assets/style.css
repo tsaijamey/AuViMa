@@ -691,6 +691,77 @@ html, body {
   pointer-events: none;
 }
 #strap-layer[hidden] { display: none; }
+
+/* 人类输入行。只在地址带 ?userInput=true 时露出来（见 index.html 的注释）。
+   挂在菜单栏正下方居中：底部是字幕与 dock 的地盘，右下是浏览器窗口常驻的位置，
+   顶部中央是整块桌面上唯一长期空着的地方。z-index 压在贴纸栏(1300)之上、
+   虚拟鼠标(2000)之下：人要能点到它，鼠标又不该被它挡住。 */
+#human-input {
+  position: absolute;
+  top: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 760px;
+  z-index: 1400;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(18, 22, 30, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(10px);
+  color: #e8ecf2;
+  font-size: 14px;
+  pointer-events: auto;
+}
+#human-input[hidden] { display: none; }
+#human-input .hi-row { display: flex; align-items: center; gap: 8px; }
+#human-input .hi-tag {
+  flex: none;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: #9fb3c8;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(159, 179, 200, 0.35);
+}
+#human-input textarea {
+  flex: 1;
+  resize: none;
+  min-height: 34px;
+  max-height: 120px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font: inherit;
+  line-height: 1.4;
+  outline: none;
+}
+#human-input textarea:focus { border-color: rgba(120, 170, 255, 0.7); }
+#human-input button {
+  flex: none;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 0;
+  background: #3b82f6;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+#human-input button:disabled { opacity: 0.55; cursor: default; }
+#human-input .hi-status { margin-top: 6px; min-height: 16px; font-size: 12px; color: #9fb3c8; }
+#human-input .hi-status.bad { color: #ff8a8a; }
+#human-input .hi-log { display: flex; flex-direction: column; gap: 3px; margin-bottom: 6px; }
+#human-input .hi-log:empty { display: none; }
+#human-input .hi-line {
+  font-size: 12px;
+  color: #c7d2de;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#human-input .hi-line::before { content: "↳ "; color: #6b7f94; }
 #strap-layer.at-bottom { bottom: 132px; }
 /* 顶部形态贴着菜单栏下沿走，不压住它——菜单栏是场景交代，盖掉它画面就
    不像一台电脑了。 */

@@ -268,12 +268,17 @@ class SendRequest(BaseModel):
 
     ``cwd`` 只在页面**新建**一场会话时给：那个编号是页面自己 mint 的，还没有任何
     记录，所以读不出目录。已经有记录的会话一律以档案里记着的目录为准。
+
+    ``wait`` 为假时只排队不等答：判完落点就回 ``status: "queued"``。虚拟桌面上的人类
+    输入行走这条路——人追加的那句话要排进主 agent 的队列，而主 agent 那一轮可能还要
+    跑几十分钟。
     """
 
     text: str = ""
     images: list[str] = []
     documents: list[Document] = []
     cwd: str | None = None
+    wait: bool = True
 
 
 @router.post("/workbench/sessions/{sid}/send")
@@ -304,6 +309,12 @@ async def send_to_session(sid: str, request: SendRequest) -> dict:
     prompt = build_prompt_with_attachments(request.text, image_paths, doc_paths)
 
     try:
+        if not request.wait:
+            # 只排队：判落点仍会读盘，照样进工作线程；投喂本身由它自己开的线程做。
+            await asyncio.to_thread(
+                session_send.send_queued, sid, prompt, cwd_hint=request.cwd
+            )
+            return {"sid": sid, "status": "queued", "text": ""}
         # tmux + 轮询是阻塞的，丢进工作线程，免得一轮投喂把整个事件循环停住。
         activation = await asyncio.to_thread(
             session_send.send, sid, prompt, cwd_hint=request.cwd

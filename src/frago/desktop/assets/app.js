@@ -1101,8 +1101,80 @@
     ["mousedown", "mouseup", "click", "dblclick", "contextmenu",
      "wheel", "keydown", "keyup", "keypress", "selectstart", "dragstart"
     ].forEach(function (type) {
-      window.addEventListener(type, function (e) { e.preventDefault(); e.stopPropagation(); }, { capture: true, passive: false });
+      window.addEventListener(type, function (e) {
+        // 唯一的例外是人类输入行：它是这块显示器上唯一允许人碰的东西。
+        // 事件落在它里面就放行，别的地方照旧免疫。
+        if (els.humanInput && !els.humanInput.hidden &&
+            e.target && els.humanInput.contains(e.target)) return;
+        e.preventDefault(); e.stopPropagation();
+      }, { capture: true, passive: false });
     });
+  }
+
+  /* ── 人类输入行 ──
+     只在地址带 ?userInput=true&session=<编号> 时出现。人打的字不进桌面终端
+     ——终端里跑着的是 worker，人的话要先到导演（那场隐藏的会话）那里，由它
+     决定怎么转达。所以这里发的是 frago 服务的会话发送接口，wait:false 表示
+     只排队不等答：导演那一轮可能还要跑几十分钟，输入行等不起。 */
+  function humanInputTarget() {
+    var q = location.search;
+    var on = /[?&]userInput=(true|1)(&|$)/.test(q);
+    var m = q.match(/[?&]session=([^&]+)/);
+    if (!on || !m) return null;
+    try { return decodeURIComponent(m[1]); } catch (e) { return m[1]; }
+  }
+
+  function setupHumanInput() {
+    var box = $("human-input");
+    if (!box) return;
+    els.humanInput = box;
+    var sid = humanInputTarget();
+    if (!sid) return;              // 默认不存在：录制时画面里不该有它
+    var text = $("hi-text"), send = $("hi-send"), status = $("hi-status"), log = $("hi-log");
+    box.hidden = false;
+
+    function note(msg, bad) {
+      status.textContent = msg || "";
+      status.classList.toggle("bad", !!bad);
+    }
+    function remember(line) {
+      var item = document.createElement("div");
+      item.className = "hi-line";
+      item.textContent = line;
+      log.appendChild(item);
+      while (log.children.length > 4) log.removeChild(log.firstChild);
+    }
+    function submit() {
+      var line = text.value.trim();
+      if (!line) return;
+      send.disabled = true;
+      note("正在排队…");
+      fetch("/api/workbench/sessions/" + encodeURIComponent(sid) + "/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: line, wait: false })
+      }).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (body) {
+          if (!r.ok) throw new Error(body.detail || ("HTTP " + r.status));
+          return body;
+        });
+      }).then(function () {
+        remember(line);
+        text.value = "";
+        note("已排给导演，它会转达给正在干活的 worker");
+      }).catch(function (err) {
+        note("没发出去：" + (err && err.message ? err.message : err), true);
+      }).then(function () {
+        send.disabled = false;
+        text.focus();
+      });
+    }
+    send.addEventListener("click", submit);
+    text.addEventListener("keydown", function (e) {
+      // 回车发送，Shift+回车换行——与聊天框一致。
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
+    });
+    text.focus();
   }
 
   /* ── 桌布：噪声网格渐变 ──────────────────────────────────
@@ -1363,6 +1435,7 @@
     tickClock();
     setInterval(tickClock, 1000);
     window.addEventListener("resize", fitStage);
+    setupHumanInput();
     blockInput();
 
     startWallpaper();

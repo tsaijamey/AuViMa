@@ -190,6 +190,21 @@
 
     <div id="caption"></div>
 
+    <!-- 人类输入行。默认不存在：这块荧幕是只读显示器，录制时画面里不该有它。
+         地址带 ?userInput=true&session=<会话编号> 时才露出来。人打的字**不进
+         桌面终端**——那毫无意义，终端里跑着的是 worker，人的话该先到导演那里。
+         它发给的是 frago 服务的会话发送接口，排进那场隐藏会话（导演）的队列，
+         由导演决定怎么转达给终端里的 worker。 -->
+    <div id="human-input" hidden>
+      <div class="hi-log" id="hi-log"></div>
+      <div class="hi-row">
+        <span class="hi-tag">追加需求</span>
+        <textarea id="hi-text" rows="1" placeholder="一边看它干活，一边把想到的补充写在这里，回车发送"></textarea>
+        <button type="button" id="hi-send">发送</button>
+      </div>
+      <div class="hi-status" id="hi-status"></div>
+    </div>
+
     <!-- 贴纸栏：电视节目下三分之一那条说明字条。
          与 #caption 分层，不共用：字幕是一句句流过去的话，各自计时、说完就走；
          贴纸栏是挂在那儿的一条说明，讲这一段的全程都在。合成一层的话，

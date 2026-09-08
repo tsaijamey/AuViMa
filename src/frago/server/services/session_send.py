@@ -26,6 +26,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import threading
 from dataclasses import dataclass
 
 from frago.session import claude_sessions as claude_svc
@@ -164,3 +165,39 @@ def send(session_id: str, prompt: str, *, cwd_hint: str | None = None, timeout_s
         cwd=target.cwd,
         timeout_s=timeout_s,
     )
+
+
+def send_queued(session_id: str, prompt: str, *, cwd_hint: str | None = None) -> str:
+    """把一段话排给这场会话，**不等它答**：判完落点就返回，投喂在后台线程里做。
+
+    给「人一边看 agent 干活一边追加一句」这种场合用：那一轮往往还要跑几十分钟，
+    页面上的输入行等不起一个整轮；而 agent 的 TUI 本来就会把干活期间到达的话排队，
+    等这一轮停下来接着处理。投喂本身与 :func:`send` 走同一条路，只是不在这里等。
+
+    判落点（哪一家、哪个目录）仍在调用线程里做完：会话不存在 / 目录问不出这类拒绝
+    必须当场回给页面，NEVER 收下再在后台静默失败。返回投喂线程的名字，便于日志对号。
+    """
+    from frago.server.services.ui_session_runner import get_runner
+
+    target = resolve_target(session_id, cwd_hint=cwd_hint)
+    if target.is_new and cwd_hint:
+        claude_svc.register_webui_session(session_id)
+
+    def _feed() -> None:
+        try:
+            get_runner().send(
+                session_id,
+                prompt,
+                agent_type=target.agent_type,
+                cwd=target.cwd,
+                timeout_s=0.0,
+            )
+        except Exception:  # noqa: BLE001 — 后台投喂失败只能记日志，页面早已拿到「已排队」
+            logger.warning("queued send to %s failed", session_id, exc_info=True)
+
+    thread = threading.Thread(
+        target=_feed, name=f"webui-queued-send-{session_id[:12]}", daemon=True
+    )
+    thread.start()
+    logger.info("webui queued send → session=%s family=%s", session_id, target.family)
+    return thread.name
