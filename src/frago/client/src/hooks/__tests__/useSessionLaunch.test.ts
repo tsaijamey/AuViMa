@@ -110,6 +110,35 @@ describe('新会话正在启动', () => {
     await waitFor(() => expect(result.current.launch).toBeNull());
   });
 
+  it('中栏正开着这一场时，进了清单照样让位——不许等 agent 开口', async () => {
+    /**
+     * 这一条钉的是一次真事故。判据一度被改成"中栏正开着这一场时，等 agent 动了才让
+     * 位"，理由是想让人看清那两步。代价是这块卡会挂死：新起的那一场在清单里还不算
+     * "在跑"，记录流因此既不轮询也没人推，agent 说没说话这一侧根本问不到，卡就一直
+     * 站在中栏挡着不走。退场判据只能挂在这一侧看得见的事实上。
+     */
+    const { result, rerender } = renderHook(
+      ({ sessions }) =>
+        useSessionLaunch({
+          sessions,
+          reload: () => {},
+          onReady: () => {},
+          activeSessionId: SID,
+          // 记录一条都还没有，也不该拦着它让位。
+          recordCount: 0,
+        }),
+      { initialProps: { sessions: [] as WorkbenchSession[] } }
+    );
+
+    act(() => {
+      result.current.begin(pending({ session_id: SID }), '起一场新的');
+    });
+    expect(result.current.launch).not.toBeNull();
+
+    rerender({ sessions: [session(SID)] });
+    await waitFor(() => expect(result.current.launch).toBeNull());
+  });
+
   it('清单还没扫到它，但它已经写下第一笔了，同样让位', async () => {
     const { result, rerender } = renderHook(
       ({ n }) =>
