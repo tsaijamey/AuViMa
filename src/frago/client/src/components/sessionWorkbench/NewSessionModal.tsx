@@ -28,6 +28,13 @@
  * 后端一直收这个参数，只是从前界面从没送过，于是浏览器起的会话全落在家目录。挑它正是
  * 这个对话框存在的另一半理由。
  *
+ * ## 第一句话可以带图
+ *
+ * 从前这里只收文字。人开一场会话十有八九是为了说"照着这张图改"，而那张图在这一步贴不
+ * 进来——只能先随便打一句、等会话起来、再到中栏输入区补发一次，而第一句话恰恰是最需要
+ * 它的那一句。三条路（粘贴、拖入、选文件）与中栏输入区共用同一份判据（`useAttachments`）
+ * 和同一条展示条（`AttachmentStrip`）：同一个动作在两处得是同一个结果。
+ *
  * ## 创建之后：编号未必当场就有
  *
  * claude 接受由调用方指定编号，点完创建当场就知道这一场叫什么，直接跳进去。codex 与
@@ -39,12 +46,14 @@
  * 的启动面板接手——对话框继续挂在屏幕上会挡住新会话本身，而人此刻要看的正是它。
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, ChevronRight, Folder, Home, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Folder, Home, Loader2, Plus } from 'lucide-react';
 import Modal from '../ui/Modal';
 import { getSystemDirectories } from '../../api/client';
 import { getRecentDirectories, addRecentDirectory } from '../../utils/recentDirectories';
+import AttachmentStrip from '@/components/ui/AttachmentStrip';
+import { MAX_ATTACHMENTS, useAttachments } from '@/hooks/useAttachments';
 import {
   createSession,
   pickDefaultAgent,
@@ -77,6 +86,9 @@ export default function NewSessionModal({ isOpen, onClose, onCreated }: NewSessi
   const [creating, setCreating] = useState(false);
   const [agent, setAgent] = useState<string | null>(null);
   const [showUnavailable, setShowUnavailable] = useState(false);
+  const { images, documents, addFiles, removeImage, removeDocument, clear, count } =
+    useAttachments();
+  const filePicker = useRef<HTMLInputElement>(null);
 
   const clients = useAgentClients(isOpen);
   const selectable = useMemo(() => clients.agents.filter((a) => a.selectable), [clients.agents]);
@@ -92,6 +104,7 @@ export default function NewSessionModal({ isOpen, onClose, onCreated }: NewSessi
     setError(null);
     setCreating(false);
     setShowUnavailable(false);
+    clear();
 
     let cancelled = false;
 
@@ -121,7 +134,7 @@ export default function NewSessionModal({ isOpen, onClose, onCreated }: NewSessi
     return () => {
       cancelled = true;
     };
-  }, [isOpen]);
+  }, [isOpen, clear]);
 
   /**
    * 清单一到就把默认那一家选上。人上次挑的优先——换机位是有惯性的。
@@ -134,7 +147,25 @@ export default function NewSessionModal({ isOpen, onClose, onCreated }: NewSessi
     setAgent((prev) => prev ?? pickDefaultAgent(clients.agents, clients.fallbackDefault));
   }, [clients.agents, clients.fallbackDefault]);
 
-  const canSubmit = !creating && !!chosen && dir.trim().length > 0 && text.trim().length > 0;
+  // 只有图、一个字没打也算数：人截了张图想说"看这个"，逼他再补一句废话没有道理。
+  // 与中栏输入区同一条判据，服务端那边也认这一档。
+  const canSubmit =
+    !creating && !!chosen && dir.trim().length > 0 && (text.trim().length > 0 || count > 0);
+
+  /** 截图粘贴进来的是文件而不是文字，拦下来当附件，别让它变成一串乱码落进文本框。 */
+  const handlePaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = e.clipboardData?.files;
+    if (!files || files.length === 0) return;
+    e.preventDefault();
+    void addFiles(files);
+  };
+
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    const files = e.dataTransfer?.files;
+    if (!files || files.length === 0) return;
+    e.preventDefault();
+    void addFiles(files);
+  };
 
   const handleCreate = async () => {
     if (!canSubmit || !chosen) return;
@@ -146,6 +177,8 @@ export default function NewSessionModal({ isOpen, onClose, onCreated }: NewSessi
         agent: chosen.agent_type,
         cwd: dir.trim(),
         text: first,
+        images: images.map((im) => im.dataUrl),
+        documents: documents.map((d) => ({ name: d.name, data: d.dataUrl })),
       });
       rememberLastAgent(chosen.agent_type);
       addRecentDirectory(dir.trim());
@@ -287,13 +320,31 @@ export default function NewSessionModal({ isOpen, onClose, onCreated }: NewSessi
           />
         </div>
 
-        <div className="flex flex-col gap-2">
+        {/* 第一句话这一块收图片与文档，三条路（粘贴、拖入、选文件）与中栏输入区完全相同。
+            人开一场会话往往就是为了说"照着这张图改"，从前这里只收文字，那张图得等会话
+            起来之后再补发一次，而第一句话才是最需要它的那一句。 */}
+        <div
+          className="flex flex-col gap-2"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={handleDrop}
+        >
           <label className="text-xs font-medium text-[var(--text-secondary)]">
             {t('workbench.newSession.firstMessage')}
           </label>
+
+          <AttachmentStrip
+            images={images}
+            documents={documents}
+            onRemoveImage={removeImage}
+            onRemoveDocument={removeDocument}
+            idPrefix="new-session"
+          />
+
           <textarea
             value={text}
+            data-testid="new-session-input"
             onChange={(e) => setText(e.target.value)}
+            onPaste={handlePaste}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
@@ -304,6 +355,28 @@ export default function NewSessionModal({ isOpen, onClose, onCreated }: NewSessi
             placeholder={t('workbench.newSession.firstMessagePlaceholder')}
             className="resize-none bg-[var(--bg-subtle)] border border-[var(--border-color)] rounded-md px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]"
           />
+
+          <input
+            ref={filePicker}
+            type="file"
+            multiple
+            hidden
+            data-testid="new-session-file"
+            onChange={(e) => {
+              if (e.target.files) void addFiles(e.target.files);
+              e.target.value = '';
+            }}
+          />
+          <button
+            type="button"
+            data-testid="new-session-pick"
+            disabled={count >= MAX_ATTACHMENTS}
+            onClick={() => filePicker.current?.click()}
+            className="flex items-center gap-1.5 self-start rounded-md px-2 py-1 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-40"
+          >
+            <Plus size={13} strokeWidth={1.5} />
+            {t('workbench.newSession.attach')}
+          </button>
         </div>
 
         {error && (

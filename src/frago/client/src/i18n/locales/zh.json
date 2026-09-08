@@ -1254,6 +1254,7 @@
       "cwdHint": "会话在该目录下启动，等同于在这里打开终端后运行它。",
       "firstMessage": "第一句话",
       "firstMessagePlaceholder": "要它做什么…",
+      "attach": "加图片或文件",
       "createFailed": "创建失败：{{reason}}",
       "cancel": "取消",
       "create": "创建"

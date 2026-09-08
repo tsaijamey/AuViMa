@@ -122,6 +122,51 @@ async function fillFirstMessage(text = '干活') {
   });
 }
 
+describe('NewSessionModal — 第一句话带附件', () => {
+  it('截图粘进第一句话就跟着一起发出去，不用等会话起来再补', async () => {
+    open();
+    await screen.findByTestId('agent-claude');
+    await fillFirstMessage('照这张图改');
+
+    fireEvent.paste(screen.getByTestId('new-session-input'), {
+      clipboardData: { files: [new File(['fake-png-bytes'], 'shot.png', { type: 'image/png' })] },
+    });
+    await waitFor(() => expect(screen.getAllByTestId('new-session-thumb')).toHaveLength(1));
+
+    fireEvent.click(screen.getByText('创建'));
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0].text).toBe('照这张图改');
+    expect((posted[0].images as string[])[0]).toContain('base64');
+  });
+
+  it('一个字没打、只有一张图，照样建得出来', async () => {
+    open();
+    await screen.findByTestId('agent-claude');
+    // 人截了张图想说"看这个"，逼他再补一句废话没有道理。
+    expect((screen.getByText('创建') as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.paste(screen.getByTestId('new-session-input'), {
+      clipboardData: { files: [new File(['fake-png-bytes'], 'shot.png', { type: 'image/png' })] },
+    });
+    await waitFor(() => expect(screen.getAllByTestId('new-session-thumb')).toHaveLength(1));
+
+    await waitFor(() => expect((screen.getByText('创建') as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  it('粘错的那一张能单独拿掉，不必整批重来', async () => {
+    open();
+    await screen.findByTestId('agent-claude');
+
+    fireEvent.paste(screen.getByTestId('new-session-input'), {
+      clipboardData: { files: [new File(['fake-png-bytes'], 'shot.png', { type: 'image/png' })] },
+    });
+    await waitFor(() => expect(screen.getAllByTestId('new-session-thumb')).toHaveLength(1));
+
+    fireEvent.click(screen.getByTestId('new-session-remove'));
+    await waitFor(() => expect(screen.queryByTestId('new-session-thumb')).toBeNull());
+  });
+});
+
 describe('NewSessionModal — 挑客户端', () => {
   it('候选来自服务端，不是写死的三个名字', async () => {
     open();

@@ -20,11 +20,19 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import i18n from '@/i18n';
+import {
+  MAX_ATTACHMENTS,
+  useAttachments,
+  type AttachedDoc,
+  type AttachedImage,
+} from '@/hooks/useAttachments';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
-/** 一次最多附几张。与服务端 `webui_uploads._MAX_COUNT` 对齐，超出的丢弃。 */
-export const MAX_ATTACHMENTS = 8;
+// 收文件那一段（读成 base64、按 MIME 分图片与文档、数量上限）与新建会话对话框共用一份，
+// 见 `useAttachments`。这里只管"发出去"，不再自己养一套附件状态。
+export { MAX_ATTACHMENTS };
+export type { AttachedDoc, AttachedImage };
 
 /**
  * 发完之后隔多久再拉一次记录。
@@ -33,33 +41,6 @@ export const MAX_ATTACHMENTS = 8;
  * 人就不用自己去点刷新。这是「看得到」的兜底，不是轮询，只补这一次。
  */
 const RELOAD_AGAIN_MS = 1500;
-
-/** 一张已附加、待发送的图片。`dataUrl` 原样发给服务端，`name` 供缩略图的替代文字。 */
-export interface AttachedImage {
-  id: string;
-  /** `data:image/...;base64,....` */
-  dataUrl: string;
-  name: string;
-}
-
-/**
- * 一份已附加、待发送的文档。
- *
- * **浏览器给不出本机文件的真实路径**——那是浏览器的安全边界，选文件拿不到，拖拽也拿不到。
- * 所以文档跟图片走同一条路：内容以 base64 传上去，服务端落盘成真实文件，再把**服务端
- * 那一侧的绝对路径**拼进投给 agent 的提示词。agent 于是拿到一条它真的打得开的路径。
- *
- * `name` 不只是显示用：服务端拿它给落盘文件起名，agent 在提示词里看到的路径末尾就是
- * 这个名字，它靠这个名字（尤其是扩展名）判断该怎么读。
- */
-export interface AttachedDoc {
-  id: string;
-  /** `data:<mime>;base64,....` */
-  dataUrl: string;
-  name: string;
-  /** 字节数，界面上报给人看。 */
-  size: number;
-}
 
 export interface SendResult {
   sid: string;
@@ -89,15 +70,6 @@ interface OutboundPayload {
   text: string;
   images: AttachedImage[];
   documents: AttachedDoc[];
-}
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error ?? new Error(i18n.t('workbench.errors.imageUnreadable')));
-    reader.readAsDataURL(file);
-  });
 }
 
 /** 把服务端的说法取出来。FastAPI 的报错落在 `detail` 里，取不到就退回状态码。 */
@@ -176,15 +148,13 @@ export function useSendToSession(
   }: UseSendToSessionOptions = {}
 ): SendToSessionState {
   const [text, setText] = useState('');
-  const [images, setImages] = useState<AttachedImage[]>([]);
-  const [documents, setDocuments] = useState<AttachedDoc[]>([]);
+  const { images, documents, addFiles, removeImage, removeDocument, clear, restore } =
+    useAttachments();
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 发出去了却没发成、又退不回输入框（人已经在里面打了别的）的那一单。重试重发它。
   const [failed, setFailed] = useState<OutboundPayload | null>(null);
 
-  // 附件编号用单调自增，不掺时间戳与随机数——同一毫秒连附两张会撞。
-  const counter = useRef(0);
   // 输入框此刻空不空。发送失败是在 await 之后才知道的，那时候只能问 ref——闭包里的
   // text/images 停在点发送那一刻，拿它判"人有没有打新的字"必然判错。
   const boxEmpty = useRef(true);
@@ -214,62 +184,11 @@ export function useSendToSession(
   // 换会话时把上一场没发出去的内容与错误一起收走：那段话是对上一场说的。
   useEffect(() => {
     setText('');
-    setImages([]);
-    setDocuments([]);
+    clear();
     setSending(false);
     setError(null);
     setFailed(null);
-  }, [sessionId]);
-
-  /**
-   * 收下一批文件，按 MIME 分成图片与文档两路。
-   *
-   * 分两路不是为了好看：图片在界面上是缩略图、在提示词里是"打开看"，文档在界面上是
-   * 一行文件名、在提示词里是"打开读"。合成一路的话，两种都会被当成其中一种处理。
-   *
-   * 判据取浏览器给的 MIME 而不是扩展名——扩展名是可以骗人的，而这里分错的后果是
-   * 一份 PDF 被当成图片送去"看图"。MIME 认不出来（有些系统对 `.md` 就报空）时按文档
-   * 处理：文档那条路对内容不做任何假设，是安全的那一档。
-   */
-  const addFiles = useCallback(async (files: FileList | File[]) => {
-    const all = Array.from(files);
-    if (all.length === 0) return;
-    const pics = all.filter((f) => f.type.startsWith('image/'));
-    const docs = all.filter((f) => !f.type.startsWith('image/'));
-
-    if (pics.length) {
-      const read = await Promise.all(
-        pics.map(async (f) => ({
-          id: `img-${counter.current++}`,
-          dataUrl: await readFileAsDataUrl(f),
-          name: f.name || 'image',
-        }))
-      );
-      if (!mounted.current) return;
-      setImages((cur) => [...cur, ...read].slice(0, MAX_ATTACHMENTS));
-    }
-
-    if (docs.length) {
-      const read = await Promise.all(
-        docs.map(async (f) => ({
-          id: `doc-${counter.current++}`,
-          dataUrl: await readFileAsDataUrl(f),
-          name: f.name || 'file',
-          size: f.size,
-        }))
-      );
-      if (!mounted.current) return;
-      setDocuments((cur) => [...cur, ...read].slice(0, MAX_ATTACHMENTS));
-    }
-  }, []);
-
-  const removeImage = useCallback((id: string) => {
-    setImages((cur) => cur.filter((im) => im.id !== id));
-  }, []);
-
-  const removeDocument = useCallback((id: string) => {
-    setDocuments((cur) => cur.filter((d) => d.id !== id));
-  }, []);
+  }, [sessionId, clear]);
 
   /**
    * 送达信号一到就把按钮放回去。
@@ -327,8 +246,7 @@ export function useSendToSession(
         // 里面打了新的字就先收着，重试重发的仍是这一份。两条路都一个字不丢。
         if (boxEmpty.current) {
           setText(payload.text);
-          setImages(payload.images);
-          setDocuments(payload.documents);
+          restore(payload.images, payload.documents);
           setFailed(null);
         } else {
           setFailed(payload);
@@ -340,7 +258,7 @@ export function useSendToSession(
         if (mounted.current && ticket.current === mine) setSending(false);
       }
     },
-    [sessionId]
+    [sessionId, restore]
   );
 
   const send = useCallback(async () => {
@@ -356,10 +274,9 @@ export function useSendToSession(
     if (!payload.text && !payload.images.length && !payload.documents.length) return;
     // 点了发送就撤不回了，输入框当场交还给人。那句话改由上方的信封替它站着。
     setText('');
-    setImages([]);
-    setDocuments([]);
+    clear();
     await dispatch(payload);
-  }, [enabled, sessionId, sending, failed, text, images, documents, dispatch]);
+  }, [enabled, sessionId, sending, failed, text, images, documents, clear, dispatch]);
 
   return {
     text,

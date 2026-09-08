@@ -32,8 +32,9 @@
 
 import { useCallback, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FileText, Loader2, Mail, Plus, RotateCcw, SendHorizontal, X } from 'lucide-react';
+import { Loader2, Mail, Plus, RotateCcw, SendHorizontal } from 'lucide-react';
 import { useSendToSession, MAX_ATTACHMENTS } from '@/hooks/useSendToSession';
+import AttachmentStrip from '@/components/ui/AttachmentStrip';
 import NoiseField from '@/components/ui/NoiseField';
 import { useWorkbenchLabels, type SessionFamily } from '@/hooks/useWorkbenchSessions';
 import type { OutboundMessage } from '@/hooks/useWorkbenchRecords';
@@ -71,13 +72,6 @@ export interface ComposerProps {
  * 会话记录被删掉、目录查不出来这类情况在这一侧判不出来（要问各家的档案），由服务端在
  * 发送那一刻回 409 说明原因，走的是错误提示那条路，NEVER 在这里靠猜提前闸死。
  */
-/** 字节数 → 人话。只报已经发生的量，没有分母。 */
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
 export function blockReason(sessionId: string | null): string | null {
   if (!sessionId) return 'workbench.composer.blockedNoSession';
   return null;
@@ -205,57 +199,13 @@ export default function Composer({
           </div>
         ) : null}
 
-        {images.length ? (
-          <div className="flex flex-wrap gap-2">
-            {images.map((image) => (
-              <div
-                key={image.id}
-                data-testid="composer-thumb"
-                className="relative h-16 w-16 overflow-hidden rounded-[8px] border border-border-color bg-bg-subtle"
-              >
-                <img src={image.dataUrl} alt={image.name} className="h-full w-full object-cover" />
-                <button
-                  type="button"
-                  data-testid="composer-remove"
-                  aria-label={t('workbench.composer.removeImage', { name: image.name })}
-                  onClick={() => removeImage(image.id)}
-                  className="absolute right-[2px] top-[2px] rounded-full bg-bg-card/90 p-[2px] text-text-secondary hover:text-text-primary"
-                >
-                  <X size={11} />
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : null}
-
-        {/* 文档不做缩略图——一份 PDF 的首页缩成 64px 什么也看不出来。它需要的是
-            名字（尤其扩展名，agent 靠它判断怎么读）和大小。 */}
-        {documents.length ? (
-          <div className="flex flex-wrap gap-1.5">
-            {documents.map((doc) => (
-              <span
-                key={doc.id}
-                data-testid="composer-doc"
-                className="flex max-w-full items-center gap-1.5 rounded-[8px] border border-border-color bg-bg-subtle py-1 pl-2 pr-1 text-[12px] text-text-secondary"
-              >
-                <FileText size={13} strokeWidth={1.5} className="shrink-0 text-text-muted" />
-                <span className="min-w-0 truncate">{doc.name}</span>
-                <span className="shrink-0 font-mono text-[11px] text-text-dim">
-                  {formatSize(doc.size)}
-                </span>
-                <button
-                  type="button"
-                  data-testid="composer-doc-remove"
-                  aria-label={t('workbench.composer.removeFile', { name: doc.name })}
-                  onClick={() => removeDocument(doc.id)}
-                  className="shrink-0 rounded-[4px] p-0.5 text-text-muted hover:text-text-primary"
-                >
-                  <X size={12} />
-                </button>
-              </span>
-            ))}
-          </div>
-        ) : null}
+        <AttachmentStrip
+          images={images}
+          documents={documents}
+          onRemoveImage={removeImage}
+          onRemoveDocument={removeDocument}
+          idPrefix="composer"
+        />
 
         {/* 信封区：已经点了发送、还没成为新一轮的那些话在这儿等着。
             两档的分野是**它进没进这场会话**，不是"发了多久"：

@@ -1254,6 +1254,7 @@
       "cwdHint": "The session starts in this directory — the same as opening a terminal here and running it.",
       "firstMessage": "First message",
       "firstMessagePlaceholder": "What should it do…",
+      "attach": "Add image or file",
       "createFailed": "Couldn't create it: {{reason}}",
       "cancel": "Cancel",
       "create": "Create"

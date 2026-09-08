@@ -74,10 +74,19 @@ async function readError(res: Response, fallback: string): Promise<string> {
   }
 }
 
+/**
+ * 起一场新会话，第一句话可以带附件。
+ *
+ * 附件与「对着一场已有的会话说话」走的是同一条路：内容以 base64 交上去，服务端落盘，
+ * 把它那一侧的绝对路径拼进第一句话。第一句最需要这个——人往往一上来就要说"照着这张图
+ * 改"，从前这里只收文字，那张图只能等会话起来之后再补发一次。
+ */
 export async function createSession(input: {
   agent: string;
   cwd: string;
   text: string;
+  images?: string[];
+  documents?: { name: string; data: string }[];
 }): Promise<PendingLaunch> {
   const res = await fetch(`${API_BASE_URL}/api/workbench/sessions`, {
     method: 'POST',

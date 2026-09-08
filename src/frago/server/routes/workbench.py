@@ -16,6 +16,7 @@ claude-sessions 的地方，谁读都会以为发错了。判家族、查工作�
 from __future__ import annotations
 
 import asyncio
+import uuid
 from dataclasses import asdict
 from typing import Any
 
@@ -72,16 +73,36 @@ async def list_workbench_agents() -> dict[str, Any]:
     }
 
 
+class Document(BaseModel):
+    """一份随这条消息附上的文档。
+
+    ``name`` 是用户那边的原文件名，只用来给落盘文件起个有意义的名字——agent 在提示词
+    里看到的是路径，路径上带着原名它才知道自己要打开的是什么。
+
+    新建会话与发送共用这一份形状：两条路收的是同一种东西，各写一份迟早各走各的。
+    """
+
+    name: str = ""
+    data: str = ""
+
+
 class CreateSessionRequest(BaseModel):
     """``POST /workbench/sessions`` 的请求体。
 
     ``agent`` 是挑中的那一家（``/workbench/agents`` 里的 ``agent_type``）；
     ``cwd`` 是会话的起始目录；``text`` 是第一句话。
+
+    ``images`` 与 ``documents`` 走的是与发送那条接口完全相同的一条路：内容以 base64
+    传上来，服务端落盘成真实文件，绝对路径拼进投给 agent 的第一句话。第一句话最需要
+    附件——人往往一上来就要交代"照着这张图改"，而从前这里只收文字，那张图只能等会话
+    起来之后再补发一次。允许文字为空但带附件。
     """
 
     agent: str
     cwd: str
-    text: str
+    text: str = ""
+    images: list[str] = []
+    documents: list[Document] = []
 
 
 @router.post("/workbench/sessions", status_code=201)
@@ -100,14 +121,32 @@ async def create_workbench_session(request: CreateSessionRequest) -> dict[str, A
     挑不了的那一家回 400（带上为什么），NEVER 起了再说：人要等上一分钟才看得出这一场
     根本不会出现在左栏。
     """
-    if not request.text.strip():
-        raise HTTPException(status_code=400, detail="第一句话不能是空的")
+    if not request.text.strip() and not request.images and not request.documents:
+        raise HTTPException(status_code=400, detail="第一句话和附件不能都是空的")
     if not request.cwd.strip():
         raise HTTPException(status_code=400, detail="起始目录不能是空的")
 
+    # 附件要落盘，落盘要有个目录名，而目录名该是这场会话自己的编号——事后回头看
+    # ``~/.frago/webui_uploads/`` 时，一眼就知道这几张图是哪一场的。编号在这里先 mint
+    # 出来：编号由页面定的那一家（claude）拿它当真编号，由 agent 自己分配编号的那两家
+    # （codex / opencode）用不上它，附件目录仍归在这个名字下。
+    launch_id = str(uuid.uuid4())
+    try:
+        image_paths = save_uploaded_images(request.images, launch_id)
+        doc_paths = save_uploaded_documents(
+            [d.model_dump() for d in request.documents], launch_id
+        )
+    except ImageUploadError as e:
+        raise HTTPException(status_code=400, detail=f"附件没收下：{e}") from e
+    prompt = build_prompt_with_attachments(request.text.strip(), image_paths, doc_paths)
+
     try:
         launch = await asyncio.to_thread(
-            workbench_new_session.start, request.agent, request.cwd, request.text.strip()
+            workbench_new_session.start_with_id,
+            request.agent,
+            request.cwd,
+            prompt,
+            session_id=launch_id,
         )
     except workbench_agents.AgentUnavailable as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -245,17 +284,6 @@ async def unpin_workbench_session(sid: str) -> dict[str, list[str]]:
     哪一家**——不管什么形状，把它从名单里去掉都是对的。
     """
     return {"pinned": await asyncio.to_thread(workbench_pins.unpin, sid)}
-
-
-class Document(BaseModel):
-    """一份随这条消息附上的文档。
-
-    ``name`` 是用户那边的原文件名，只用来给落盘文件起个有意义的名字——agent 在提示词
-    里看到的是路径，路径上带着原名它才知道自己要打开的是什么。
-    """
-
-    name: str = ""
-    data: str = ""
 
 
 class SendRequest(BaseModel):

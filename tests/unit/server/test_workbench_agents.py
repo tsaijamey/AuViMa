@@ -218,6 +218,47 @@ class TestRoutes:
         )
         assert res.status_code == 400
 
+    def test_第一句话可以只有图(self, client, monkeypatch, tmp_path):
+        """人截了张图想说"看这个"，逼他再补一句废话没有道理。
+
+        图落盘之后，它的绝对路径要拼进投给 agent 的第一句话——那是 agent 唯一打得开
+        这张图的方式。
+        """
+        from frago.server.services import webui_uploads, workbench_new_session
+
+        monkeypatch.setattr(webui_uploads, "UPLOAD_ROOT", tmp_path / "uploads")
+        seen: dict[str, str] = {}
+
+        def fake_start(agent_type, cwd, prompt, *, session_id):
+            seen["prompt"] = prompt
+            return workbench_new_session.PendingLaunch(
+                handle=session_id,
+                agent_type=agent_type,
+                display_name="Claude Code",
+                cwd=cwd,
+                session_id=session_id,
+            )
+
+        monkeypatch.setattr(workbench_new_session, "start_with_id", fake_start)
+
+        res = client.post(
+            "/api/workbench/sessions",
+            json={
+                "agent": "claude",
+                "cwd": "/tmp",
+                "text": "",
+                "images": ["data:image/png;base64,aGVsbG8="],
+            },
+        )
+
+        assert res.status_code == 201
+        assert "请查看以下附件。" in seen["prompt"]
+        saved = list((tmp_path / "uploads").rglob("*.png"))
+        assert len(saved) == 1
+        assert str(saved[0]) in seen["prompt"]
+        # 附件目录挂在这场会话自己的编号下，事后回头看一眼就知道这张图是哪一场的。
+        assert saved[0].parent.name == res.json()["session_id"]
+
     def test_问一个不存在的把手回404(self, client):
         """无限轮询一个永远不会有答案的把手，比直说"跟丢了"坏得多。"""
         res = client.get("/api/workbench/sessions/pending/webui-nothing")
