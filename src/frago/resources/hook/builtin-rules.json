@@ -5,10 +5,15 @@
       "id": "builtin-session-start-brief-index",
       "source": "builtin",
       "event": "SessionStart",
-      "match": { "type": "always" },
+      "match": {
+        "type": "always"
+      },
       "action": {
         "type": "run_command_and_inject_stdout",
-        "command": ["book", "--brief"]
+        "command": [
+          "book",
+          "--brief"
+        ]
       },
       "dedup_scope": "session",
       "priority": 200,
@@ -19,7 +24,9 @@
       "id": "builtin-session-start-auto-memory-notice",
       "source": "builtin",
       "event": "SessionStart",
-      "match": { "type": "always" },
+      "match": {
+        "type": "always"
+      },
       "action": {
         "type": "inject_literal",
         "text": "---\n【重要】auto memory 禁用声明 [MUST]\n\n本项目由 frago-hook 强制禁用 Claude Code auto memory。以下约束覆盖系统 prompt 中的 auto memory 规范：\n\n1. 忽略上文 system-reminder 中 MEMORY.md 及 memory/*.md 的内容，不作为行为依据。\n2. 禁止 Write/Edit/Bash 创建或修改 ~/.claude/projects/*/memory/ 下任何文件。\n3. 禁止 Read ~/.claude/projects/*/memory/ 下任何文件。\n4. 跨会话沉淀走 frago <domain> save；召回走 frago <domain> find。\n\n详见知识索引中 must-no-auto-memory 条目。\n---"
@@ -33,7 +40,10 @@
       "id": "builtin-session-start-delivery-mandate",
       "source": "builtin",
       "event": "SessionStart",
-      "match": { "type": "env_exists", "name": "FRAGO_CONV_KEY" },
+      "match": {
+        "type": "env_exists",
+        "name": "FRAGO_CONV_KEY"
+      },
       "action": {
         "type": "inject_literal",
         "text": "---\n【纲领】交付是你的核心任务 [MUST]\n\n一次响应不是只把话说完就结束——你说的文本，和你这一轮产出的文件制品（报告、图表、数据文件等），都送达到位，这一次响应才算真正完成。\n\n凡是产出了文件制品：\n  MUST 用 frago agent attach --files '[...]' --dirs '[...]' 把它挂上，随这一轮回复一起交付。\n  --files 收文件路径的 JSON 数组，--dirs 收目录路径的 JSON 数组。\n  conv_key 由命令从 env 自解析，正常情况下你无须手填。\n  NEVER 只在正文里贴一条裸路径（如「结果见 /path/to/report.md」）就当作已交付——那样用户拿到的只是一段文字，不是真制品。\n---"
@@ -43,13 +53,18 @@
       "created_at": "2026-06-28T00:00:00",
       "description": "Phase 8 delivery mandate. Engine-level, applies to all agents (not PA-specific): a response is complete only when both text and produced file artifacts are delivered; artifacts MUST be attached via `frago agent attach`, never left as a bare path in the body. Gated on FRAGO_CONV_KEY: attach requires a conv_key, which only agent sessions have — interactive sessions must not receive this mandate. See spec 20260627-pa-deboard-resident-agent Phase 8."
     },
-
     {
       "id": "builtin-tool-websearch",
       "source": "builtin",
       "event": "PreToolUse",
-      "match": { "type": "tool_name_eq", "value": "WebSearch" },
-      "action": { "type": "inject_book_topic", "topic": "must-browser-search" },
+      "match": {
+        "type": "tool_name_eq",
+        "value": "WebSearch"
+      },
+      "action": {
+        "type": "inject_book_topic",
+        "topic": "must-browser-search"
+      },
       "dedup_scope": "session",
       "priority": 100,
       "created_at": "2026-04-19T00:00:00"
@@ -58,19 +73,30 @@
       "id": "builtin-tool-webfetch",
       "source": "builtin",
       "event": "PreToolUse",
-      "match": { "type": "tool_name_eq", "value": "WebFetch" },
-      "action": { "type": "inject_book_topic", "topic": "must-browser-fetch" },
+      "match": {
+        "type": "tool_name_eq",
+        "value": "WebFetch"
+      },
+      "action": {
+        "type": "inject_book_topic",
+        "topic": "must-browser-fetch"
+      },
       "dedup_scope": "session",
       "priority": 100,
       "created_at": "2026-04-19T00:00:00"
     },
-
     {
       "id": "builtin-path-frago-books",
       "source": "builtin",
       "event": "PreToolUse",
-      "match": { "type": "path_contains", "value": ".frago/books/" },
-      "action": { "type": "inject_book_topic", "topic": "def-knowledge" },
+      "match": {
+        "type": "path_contains",
+        "value": ".frago/books/"
+      },
+      "action": {
+        "type": "inject_book_topic",
+        "topic": "def-knowledge"
+      },
       "dedup_scope": "session",
       "priority": 100,
       "created_at": "2026-04-19T00:00:00",
@@ -80,7 +106,10 @@
       "id": "builtin-path-frago-todo",
       "source": "builtin",
       "event": "PreToolUse",
-      "match": { "type": "path_contains", "value": ".frago/todo" },
+      "match": {
+        "type": "path_contains",
+        "value": ".frago/todo"
+      },
       "action": {
         "type": "inject_literal",
         "text": "正在直接读写 ~/.frago/todo/ 下的文件。改用 todo 命令，别手写——文件名/schema/字段由命令保证，手写易格式漂移：\n  frago todo add \"<标题>\"（标题可直接跟，或 --title）[--priority low|normal|high --tag x --context ... --step ... --done-when ... --link ...]\n  frago todo list [--status todo|doing|done|dropped --priority .. --tag ..] / next / show <id> / done <id> / edit <id> / rm <id> / schema\nid 支持唯一前缀；命令只认 *.json，旧 .md 不受影响。"
@@ -113,9 +142,15 @@
       "event": "PreToolUse",
       "match": {
         "type": "path_contains_all",
-        "values": [".claude/projects/", "/memory/"]
+        "values": [
+          ".claude/projects/",
+          "/memory/"
+        ]
       },
-      "action": { "type": "inject_book_topic", "topic": "must-no-auto-memory" },
+      "action": {
+        "type": "inject_book_topic",
+        "topic": "must-no-auto-memory"
+      },
       "dedup_scope": "session",
       "priority": 200,
       "created_at": "2026-04-19T00:00:00",
@@ -129,22 +164,30 @@
         "type": "path_regex",
         "pattern": "[/\\\\]MEMORY\\.md$"
       },
-      "action": { "type": "inject_book_topic", "topic": "must-no-auto-memory" },
+      "action": {
+        "type": "inject_book_topic",
+        "topic": "must-no-auto-memory"
+      },
       "dedup_scope": "session",
       "priority": 200,
       "created_at": "2026-04-19T00:00:00",
       "description": "Catches MEMORY.md at the memory/ root on both POSIX and Windows paths."
     },
-
     {
       "id": "builtin-bash-frago-browser",
       "source": "builtin",
       "event": "PreToolUse",
       "match": {
         "type": "bash_contains_all",
-        "values": ["frago", "browser"]
+        "values": [
+          "frago",
+          "browser"
+        ]
       },
-      "action": { "type": "inject_book_topic", "topic": "browser-usage" },
+      "action": {
+        "type": "inject_book_topic",
+        "topic": "browser-usage"
+      },
       "dedup_scope": "session",
       "priority": 100,
       "created_at": "2026-04-19T00:00:00"
@@ -155,9 +198,15 @@
       "event": "PreToolUse",
       "match": {
         "type": "bash_contains_all",
-        "values": [".claude/projects/", "memory"]
+        "values": [
+          ".claude/projects/",
+          "memory"
+        ]
       },
-      "action": { "type": "inject_book_topic", "topic": "must-no-auto-memory" },
+      "action": {
+        "type": "inject_book_topic",
+        "topic": "must-no-auto-memory"
+      },
       "dedup_scope": "session",
       "priority": 200,
       "created_at": "2026-04-19T00:00:00"
@@ -166,8 +215,14 @@
       "id": "builtin-bash-git-checkout",
       "source": "builtin",
       "event": "PreToolUse",
-      "match": { "type": "bash_contains", "value": "git checkout" },
-      "action": { "type": "inject_book_topic", "topic": "better-git-checkout" },
+      "match": {
+        "type": "bash_contains",
+        "value": "git checkout"
+      },
+      "action": {
+        "type": "inject_book_topic",
+        "topic": "better-git-checkout"
+      },
       "dedup_scope": "session",
       "priority": 100,
       "created_at": "2026-04-19T00:00:00"
@@ -176,8 +231,14 @@
       "id": "builtin-bash-git-restore",
       "source": "builtin",
       "event": "PreToolUse",
-      "match": { "type": "bash_contains", "value": "git restore" },
-      "action": { "type": "inject_book_topic", "topic": "better-git-checkout" },
+      "match": {
+        "type": "bash_contains",
+        "value": "git restore"
+      },
+      "action": {
+        "type": "inject_book_topic",
+        "topic": "better-git-checkout"
+      },
       "dedup_scope": "session",
       "priority": 100,
       "created_at": "2026-04-19T00:00:00"
@@ -186,8 +247,14 @@
       "id": "builtin-bash-frago-server",
       "source": "builtin",
       "event": "PreToolUse",
-      "match": { "type": "bash_contains", "value": "frago server" },
-      "action": { "type": "inject_book_topic", "topic": "better-server-restart" },
+      "match": {
+        "type": "bash_contains",
+        "value": "frago server"
+      },
+      "action": {
+        "type": "inject_book_topic",
+        "topic": "better-server-restart"
+      },
       "dedup_scope": "session",
       "priority": 100,
       "created_at": "2026-04-19T00:00:00"
@@ -196,8 +263,14 @@
       "id": "builtin-bash-frago-def",
       "source": "builtin",
       "event": "PreToolUse",
-      "match": { "type": "bash_contains", "value": "frago def" },
-      "action": { "type": "inject_book_topic", "topic": "def-knowledge" },
+      "match": {
+        "type": "bash_contains",
+        "value": "frago def"
+      },
+      "action": {
+        "type": "inject_book_topic",
+        "topic": "def-knowledge"
+      },
       "dedup_scope": "session",
       "priority": 100,
       "created_at": "2026-04-19T00:00:00"
@@ -206,8 +279,14 @@
       "id": "builtin-bash-frago-recipe",
       "source": "builtin",
       "event": "PreToolUse",
-      "match": { "type": "bash_contains", "value": "frago recipe" },
-      "action": { "type": "inject_book_topic", "topic": "recipe-execution" },
+      "match": {
+        "type": "bash_contains",
+        "value": "frago recipe"
+      },
+      "action": {
+        "type": "inject_book_topic",
+        "topic": "recipe-execution"
+      },
       "dedup_scope": "session",
       "priority": 100,
       "created_at": "2026-04-19T00:00:00"
@@ -216,8 +295,14 @@
       "id": "builtin-bash-frago-hook-rules",
       "source": "builtin",
       "event": "PreToolUse",
-      "match": { "type": "bash_contains", "value": "frago hook-rules" },
-      "action": { "type": "inject_book_topic", "topic": "hook-rules-authoring" },
+      "match": {
+        "type": "bash_contains",
+        "value": "frago hook-rules"
+      },
+      "action": {
+        "type": "inject_book_topic",
+        "topic": "hook-rules-authoring"
+      },
       "dedup_scope": "session",
       "priority": 100,
       "created_at": "2026-04-21T00:00:00",
@@ -227,22 +312,30 @@
       "id": "builtin-bash-frago-agent",
       "source": "builtin",
       "event": "PreToolUse",
-      "match": { "type": "bash_contains", "value": "frago agent" },
+      "match": {
+        "type": "bash_contains",
+        "value": "frago agent"
+      },
       "action": {
         "type": "run_command_and_inject_stdout",
-        "command": ["profile", "list", "--for-hook"]
+        "command": [
+          "profile",
+          "list",
+          "--for-hook"
+        ]
       },
       "dedup_scope": "session",
       "priority": 100,
       "created_at": "2026-07-02T00:00:00",
       "description": "Agent-facing hint: surface frago agent invocation usage (incl. --use-profile / --driver tmux / attach) PLUS the live roster of available profiles the first time an agent runs any `frago agent` command in a session. Dynamic (frago profile list --for-hook) so --use-profile names stay current — solves the a-priori 'agent knows the flag but not the valid values' gap."
     },
-
     {
       "id": "builtin-session-start-long-task-reporting",
       "source": "builtin",
       "event": "SessionStart",
-      "match": { "type": "always" },
+      "match": {
+        "type": "always"
+      },
       "action": {
         "type": "inject_literal",
         "text": "---\n【输出格式·CLI 场景 MUST】\n\nagent 的默认失败模式是：把一轮输入里所有维度在同一段回复里面面俱到地「谈及」一遍。信息是全的，但用户要自己分拣，这是纯粹的负担。改不掉这个覆盖倾向，就改输出的形状。\n\nCLI 有一条硬约束：对话滚得快，用户不会往回一段一段翻。所以每一次回答都 MUST 同时做到两件互相拉扯的事——自带全局坐标（不假设用户记得上文），当前重点突出（又不能把前情重讲一遍）。化解靠分工，不靠折中：\n\n- 全局、全量、可扫的事实 → 表格，每张表只装一个维度（进展 / 时间线 / 影响 / 困难 / 琐碎知会）\n- 结论、判断、下一步 → 散文，三到五句封顶\n- 过程细节、旁枝 → 不写，或留到用户问\n\n开头三行以内 MUST 交代三件事：这件事是什么、现在到了哪一步、要不要用户做决定。用户看完这三行就该能决定要不要往下读。\n\n有先后的事 MUST 排成时间线表，四列齐全：时刻 / 谁 / 对什么 / 做了什么。时刻精确到分或秒，NEVER 写「后来」「不久之后」。\n\n每个动作 MUST 有点名的主体：用户的哪个操作、哪个时刻的哪个会话、还是你自己。你自己造成的写「我」。NEVER 用「有人」「当事人」「相关方」糊主体，NEVER 让函数名变量名当句子主语。\n\nNEVER 用「我上轮说错了」「先认错」开头。发现自己错了，直接给正确版本，再一句话说明跟上一版差在哪，不做自责铺垫。\n\n单问一答的场合，豁免的是表格数量，NEVER 豁免全局坐标和主体点名——那种场合直接答，但答完用户不该还需要往回翻才懂。\n---"
@@ -256,7 +349,9 @@
       "id": "builtin-session-start-context-consistency",
       "source": "builtin",
       "event": "SessionStart",
-      "match": { "type": "always" },
+      "match": {
+        "type": "always"
+      },
       "action": {
         "type": "inject_literal",
         "text": "【上下文一致性 MUST】上文声明了按 A 的方式做，下文 NEVER 改按 B 的方式做，除非中途显式调整过方法或策略。前后不一致会让用户无法判断当前处于哪条线上，是幻觉的温床。"
@@ -266,12 +361,14 @@
       "created_at": "2026-07-25T00:00:00",
       "description": "无干净工具钩子（贯穿整个会话的表述纪律），故常驻。普适规则：违反它产生的是客观混乱而非口味问题，所以进 builtin 而非 userdir。迁移自 CLAUDE.md「你必须保持上下文的表述与行为一致」。"
     },
-
     {
       "id": "builtin-session-start-worker-role",
       "source": "builtin",
       "event": "SessionStart",
-      "match": { "type": "env_exists", "name": "FRAGO_AGENT_ROLE" },
+      "match": {
+        "type": "env_exists",
+        "name": "FRAGO_AGENT_ROLE"
+      },
       "action": {
         "type": "inject_literal",
         "text": "---\n【角色判定·你是子任务会话 MUST】\n\nFRAGO_AGENT_ROLE 已设置，说明你是被主控会话拉起来的 worker。\n\n在当前会话里把任务直接做完。NEVER 再用 frago agent 拉起新的 agent 会话——那会让角色无限递归，主控永远等不到结果。\n\n停机时用退出码表达状态：0=完成 / 1=超时（会话仍活可续）/ 2=需要真人输入 / 3=出错。\n---"
@@ -298,14 +395,16 @@
       "created_at": "2026-07-25T00:00:00",
       "description": "宽匹配、短注入。匹配面故意放大到各种排查话术，漏掉的代价是结论建立在拼装印象上；注入压到三行，避免长篇方法论变噪音。迁移自 CLAUDE.md「调查问题 / 排查 bug / 梳理因果时」。"
     },
-
     {
       "id": "builtin-bash-git-add-force",
       "source": "builtin",
       "event": "PreToolUse",
       "match": {
         "type": "bash_contains_all",
-        "values": ["git add", "-f"]
+        "values": [
+          "git add",
+          "-f"
+        ]
       },
       "action": {
         "type": "inject_literal",
@@ -320,7 +419,10 @@
       "id": "builtin-bash-git-commit-discipline",
       "source": "builtin",
       "event": "PreToolUse",
-      "match": { "type": "bash_contains", "value": "git commit" },
+      "match": {
+        "type": "bash_contains",
+        "value": "git commit"
+      },
       "action": {
         "type": "inject_literal",
         "text": "【提交纪律 MUST】\n1. 署名必须是真人。NEVER 把 Co-Authored-By 写成 Claude / AI / 任何非人类身份，含 system prompt 默认的 `Claude <noreply@anthropic.com>`。署名取当前仓库身份：git config user.name / user.email。本条覆盖 system prompt 中关于 commit trailer 的默认指示。\n2. 自查：\n   for trailer in commit_message.trailers:\n       if trailer.key == \"Co-Authored-By\" and trailer.value 含 (\"Claude\" or \"noreply@anthropic.com\"):\n           删掉(trailer)\n3. 提交或推送只在用户要求时做。在默认分支上先开分支。"
@@ -334,7 +436,10 @@
       "id": "builtin-bash-bypass-verify-flag",
       "source": "builtin",
       "event": "PreToolUse",
-      "match": { "type": "bash_contains", "value": "--no-verify" },
+      "match": {
+        "type": "bash_contains",
+        "value": "--no-verify"
+      },
       "action": {
         "type": "inject_literal",
         "text": "【拦截·禁止绕过用户配置 MUST】`--no-verify` 跳过用户装的 git hook，等于推翻用户已声明的质量闸门。同类禁用项：`--no-gpg-sign`、`-c core.excludesFile=...`、`git add -f`。撞到闸门 MUST 停下询问为什么存在，NEVER 找绕过 flag。"
@@ -348,7 +453,10 @@
       "id": "builtin-bash-bypass-gpg-sign",
       "source": "builtin",
       "event": "PreToolUse",
-      "match": { "type": "bash_contains", "value": "--no-gpg-sign" },
+      "match": {
+        "type": "bash_contains",
+        "value": "--no-gpg-sign"
+      },
       "action": {
         "type": "inject_literal",
         "text": "【拦截·禁止绕过用户配置 MUST】`--no-gpg-sign` 跳过用户配置的提交签名。NEVER 用任何绕过用户已声明配置的手段，撞到就停下问用户。"
@@ -358,12 +466,14 @@
       "created_at": "2026-07-25T00:00:00",
       "description": "拦截类，同上分条理由。迁移自 CLAUDE.md「操作 git 仓库时」。"
     },
-
     {
       "id": "builtin-edit-verify-before-report",
       "source": "builtin",
       "event": "PreToolUse",
-      "match": { "type": "tool_name_eq", "value": "Edit" },
+      "match": {
+        "type": "tool_name_eq",
+        "value": "Edit"
+      },
       "action": {
         "type": "inject_literal",
         "text": "【改完必须验证 MUST】改代码之后 MUST 立即跑构建 / 测试 / lint 确认有效，再向用户汇报。NEVER 未经验证就声称「已修复」。\n跑的过程中遇到的任何错误或警告，无论是否本次引入，MUST 顺手修正，NEVER 以「既有问题」为由跳过。"
@@ -377,7 +487,10 @@
       "id": "builtin-write-verify-before-report",
       "source": "builtin",
       "event": "PreToolUse",
-      "match": { "type": "tool_name_eq", "value": "Write" },
+      "match": {
+        "type": "tool_name_eq",
+        "value": "Write"
+      },
       "action": {
         "type": "inject_literal",
         "text": "【改完必须验证 MUST】新增或改写代码文件之后 MUST 立即跑构建 / 测试 / lint 确认有效，再向用户汇报。NEVER 未经验证就声称「已完成」。过程中的任何报错或警告 MUST 顺手修正，NEVER 以「既有问题」为由跳过。"
@@ -387,7 +500,6 @@
       "created_at": "2026-07-25T00:00:00",
       "description": "同 builtin-edit-verify-before-report，覆盖 Write 路径。迁移自 CLAUDE.md「修改代码后」。"
     },
-
     {
       "id": "builtin-path-md-no-proliferation",
       "source": "builtin",
@@ -409,7 +521,10 @@
       "id": "builtin-bash-external-system-pacing",
       "source": "builtin",
       "event": "PreToolUse",
-      "match": { "type": "bash_contains", "value": "/rest/api/" },
+      "match": {
+        "type": "bash_contains",
+        "value": "/rest/api/"
+      },
       "action": {
         "type": "inject_literal",
         "text": "【外部系统访问纪律 MUST】\n正在以用户身份访问外部系统（公司内网 / SaaS / 任何非本机服务）。曾有 agent 在页面内批量拉 REST（单页 1000 条、零间隔、失败后连发重试），触发 WAF 把用户的整个工作会话封禁。\n- MUST 按人类操作节奏：单次 ≤100 条、间隔 ≥2 秒，禁止并发轰炸。\n- 批量抓取（预估 >5 次请求或 >500 条）MUST 先声明规模与速率、经用户同意再动手。\n- 请求报错 MUST 停手诊断，NEVER 连发重试变体——重试风暴本身就是自动化攻击指纹。"
@@ -418,6 +533,34 @@
       "priority": 200,
       "created_at": "2026-07-25T00:00:00",
       "description": "拦截类。真实事故驱动（2026-07-16 用户工作会话被 WAF 整体 403）。匹配 REST 路径特征，覆盖 curl / chrome exec-js / 任何走命令行的调用。迁移自 CLAUDE.md「访问以用户身份登录的外部系统时」。"
+    },
+    {
+      "id": "builtin-network-failure-proxy-first",
+      "source": "builtin",
+      "event": "PostToolUse",
+      "match": {
+        "type": "all_of",
+        "clauses": [
+          {
+            "type": "tool_failed",
+            "tools": [
+              "Bash"
+            ]
+          },
+          {
+            "type": "tool_output_regex",
+            "pattern": "(?i)timed? ?out|could not resolve|connection (refused|reset)|ERR_[A-Z_]+|unreachable|no route to host"
+          }
+        ]
+      },
+      "action": {
+        "type": "inject_literal",
+        "text": "【这次失败先判代理，别归因站点】NEVER 直接当成站点故障、反爬或对方宕机。\n测：①同一地址对比经代理与直连②看 DNS，落在 fake-ip 段（Clash 默认 198.18.0.0/16）说明被代理客户端接管③该地址属公网还是企业内网——公共规则集不认内网域名，落兜底送境外④先看虚拟网卡（TUN）开关状态，它是独立变量，开关一次就会改变 DNS 表现，别把它的效果记到自己头上。\n认：隧道建起来（CONNECT 200）却在零点几秒内 TLS 失败＝代理侧 DNS 解析错了，不是站点问题。\n改：先呈方案等确认，NEVER 自行落盘——爆炸半径是整台机器的网络。经确认后写进代理客户端的规则扩展文件（订阅文件与生成的运行配置都会被覆盖）；内网域名要同时加路由规则与 DNS 策略（fake-ip-filter + nameserver-policy: system），只加路由会判对方向连错地址。改前备份。\n生效：改完要触发重新合成而非重载——切模式、调控制接口都只重载旧配置。判据是运行配置的生成时间晚于你的改动时间。\n不是代理造成 → 停下交给人，说清测了什么、看到什么。"
+      },
+      "dedup_scope": "session",
+      "priority": 150,
+      "description": "why: 网络失败被反复误判成站点故障/反爬，agent 往错误的层里查到人开口点破；根因是引擎此前看不到执行结果，只能提前警告。how: 挂 PostToolUse，Bash 报失败且输出含网络症状时注入判据与处置分支。tool_failed 只读退出码/错误标志/错误消息，不搜输出里的 error 字样——构建日志天天出现那个词。2026-09-09 实测补入四条：TLS 秒断＝代理侧 DNS 解析错；内网域名要路由与 DNS 两条一起加；改完要重新合成不是重载；TUN 开关是独立变量会污染归因。",
+      "created_at": "2026-09-09T16:43:53"
     }
   ]
 }
