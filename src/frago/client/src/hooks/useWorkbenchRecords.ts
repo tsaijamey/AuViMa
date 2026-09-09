@@ -95,20 +95,17 @@ function flatten(text: string): string {
 /**
  * 斜杠命令落进档案时不是原样，认不出这层壳，那句话就永远等不到落地。
  *
- * 人在输入框里打的是 `/goal 把 webUI 的日历挪到底部`，写进会话档案的却是：
+ * 人在输入框里打的是 `/goal 把 webUI 的日历挪到底部`，写进会话档案的却是三段标签：
+ * 命令名、命令说明、参数。两份字面上毫无关系，于是信封一直停在"已发送"那一档，直到
+ * 等满上限才自己撤掉——人看见 agent 明明已经在干活了，输入区上方那句话却还挂着说没进去。
  *
- * ```
- * <command-name>/goal</command-name>
- * <command-message>goal</command-message>
- * <command-args>把 webUI 的日历挪到底部</command-args>
- * ```
- *
- * 两份字面上毫无关系，于是信封一直停在"已发送"那一档，直到等满上限才自己撤掉——人看见
- * agent 明明已经在干活了，输入区上方那句话却还挂着说没进去。
- *
- * 这里把壳拆回人打的那一句：命令名加参数。不是命令回显就返回 null，走原样比对那条路。
+ * 拆壳现在归数据层做：那三段标签在翻译时就已经拆开，命令落 `command`、参数落 `text`。
+ * 这里把两半拼回人打的那一句。**档案里的原样包装仍要认**——它是给旧记录留的退路，那些
+ * 早已翻译好并缓存下来的记录里，正文还是带标签的那一份。
  */
-function unwrapCommandEcho(text: string): string | null {
+function unwrapCommandEcho(record: WorkbenchRecord, text: string): string | null {
+  const command = typeof record.payload.command === 'string' ? record.payload.command : '';
+  if (command) return flatten(`${command} ${text}`);
   const name = text.match(/<command-name>([\s\S]*?)<\/command-name>/);
   if (!name) return null;
   const args = text.match(/<command-args>([\s\S]*?)<\/command-args>/);
@@ -129,7 +126,7 @@ function landingOf(r: WorkbenchRecord, msg: OutboundMessage): Landing | null {
     const text = typeof r.payload.text === 'string' ? r.payload.text : '';
     // 附件的路径是服务端往后接的，所以比的是"开头是不是那一句"，不是整句相等。
     if (flatten(text).startsWith(mine)) return 'say';
-    const unwrapped = unwrapCommandEcho(text);
+    const unwrapped = unwrapCommandEcho(r, text);
     return unwrapped && unwrapped.startsWith(mine) ? 'say' : null;
   }
   if (r.kind === 'context.inject' && r.payload.channel === 'queued_command') {
@@ -371,11 +368,44 @@ export function useWorkbenchRecords(
     }
   }, []);
 
+  /**
+   * 手上一条记录都没有时，改成重取尾部。
+   *
+   * 取增量要拿手头末条的位置当起点，一条都没有就无从下手。**刚建的那一场必定经过这个
+   * 状态**：中栏在点完创建那一刻就切了过去，而那时这场会话的档案还没写下第一笔——第一
+   * 次取尾部取了个空，此后每一趟取增量都因为没有起点而空手而回，中栏就一直空着，人只能
+   * 切去别的会话再切回来，靠换会话那一次整个重取才看得见内容。
+   *
+   * 服务端那侧卡在同一个点上：实时推送是在取记录时顺带登记的，档案还不存在时登记不上，
+   * 于是后来写下的内容也没有人推过来。所以空手这一趟改成重取尾部，一举两得——内容取回
+   * 来了，实时推送也顺势登记上了。
+   *
+   * 不碰装载态：这条路是轮询走的，每隔几秒把中栏打回"加载中"会让整栏一直闪。
+   */
+  const pickUpTail = useCallback(async (sid: string): Promise<number> => {
+    if (inflightNewer.current) return 0;
+    inflightNewer.current = true;
+    try {
+      const batch = await fetchWorkbenchRecords(sid, { tail: true, limit: PAGE_SIZE });
+      if (activeSession.current !== sid || !batch.length) return 0;
+      recordsRef.current = batch;
+      setRecords(batch);
+      setHasOlder(batch[0].seq > 0);
+      hotUntil.current = Date.now() + HOT_WINDOW_MS;
+      return batch.length;
+    } catch {
+      // 跟取增量一样：取不到不打断看记录的人，下一趟再试。
+      return 0;
+    } finally {
+      inflightNewer.current = false;
+    }
+  }, []);
+
   /** 取比手头末条更新的记录，往尾部追加。返回新取到几条——轮询靠它续命。 */
   const appendNewer = useCallback(async (sid: string): Promise<number> => {
     if (inflightNewer.current) return 0;
     const last = recordsRef.current[recordsRef.current.length - 1];
-    if (!last) return 0;
+    if (!last) return pickUpTail(sid);
     inflightNewer.current = true;
     try {
       const batch = await fetchWorkbenchRecords(sid, { after: last.seq + 1, limit: PAGE_SIZE });
@@ -395,7 +425,7 @@ export function useWorkbenchRecords(
     } finally {
       inflightNewer.current = false;
     }
-  }, []);
+  }, [pickUpTail]);
 
   const reload = useCallback(async () => {
     if (!sessionId) return;
@@ -510,6 +540,19 @@ export function useWorkbenchRecords(
     if (!sessionId) return;
     void loadTail(sessionId);
   }, [sessionId, loadTail]);
+
+  /**
+   * 会话开始在跑、手上却一条记录都没有：当场补取一次，不必等下一趟轮询。
+   *
+   * 新建的那一场正落在这条缝里——中栏在它的档案存在之前就切了过去，那一次取尾部取了个
+   * 空。它在左栏露面并显示「在跑」的那一刻，档案已经落地了，正是补取的时机。轮询本身也
+   * 兜得住，但那要再等满一档（五秒），而这一刻人正盯着一片空白等它出内容。
+   */
+  useEffect(() => {
+    if (!sessionId || !live) return;
+    if (recordsRef.current.length) return;
+    void pickUpTail(sessionId);
+  }, [sessionId, live, pickUpTail]);
 
   const loadOlder = useCallback(async () => {
     if (!sessionId || !hasOlder || loadingOlder || inflightOlder.current) return;

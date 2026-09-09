@@ -2,14 +2,18 @@
 
 一行 JSONL 进来，零条到多条 :class:`UnifiedRecord` 出去。判据表照调研
 ``research-claude-session-format.md`` 第 4.4 节的 23 条**按序命中**，顺序即语义：
-先命中先归类，换序会改变归类结果。三处硬纪律写在这里，别在别处再判一遍：
+先命中先归类，换序会改变归类结果。序 22b 是后补的一条，见下面第 2 点。四处硬纪律
+写在这里，别在别处再判一遍：
 
 1. **顺序取物理行序** — 本机 1212 个会话文件里 850 个（70.1%）时间戳倒挂，共 3973 处，
    根因是并行工具调用落盘时调用与结果交错。``seq`` 是输出序号，随入参的物理顺序单调
    递增，NEVER 按 ``ts`` 排。
 2. **``type=="user"`` 里 86% 不是人说的话** — 59173 条里 51002 条是工具结果、2012 条是
    引擎注入的伪消息，真正人手打的只有 4360 条。归 ``user.say`` 是判据表的最后一条兜底，
-   前面五条判据先把工具结果、打断、伪消息摘干净。
+   前面几条判据先把工具结果、打断、伪消息摘干净。**摘不干净的那 2138 条由序 22b 收尾**：
+   斜杠命令落盘时被拆成三段标签，命令的回显、叹号直跑的 shell 与它的输出各自单独成条，
+   后台任务跑完还会塞一条结构化通知。它们从前全归了 ``user.say``，界面于是把「你说」
+   盖在了引擎的记事上——那段免责声明正文明写着「这不是用户说的话」，却顶着「你说」出现。
 3. **无法归类的记录归 ``context.inject`` 并标记未识别** — NEVER 静默丢弃。丢掉的记录在
    界面上会凭空消失，人会以为那件事没发生过。判据表里写明"丢弃"的那几类是显式判据，
    不是兜底，落在 :class:`TranslationStats` 里逐类计数，差额随时可解释。
@@ -24,6 +28,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import OrderedDict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
@@ -204,6 +209,66 @@ _CLIPPED_HEAD = "characters truncated] ..."
 
 # 内嵌图片的 base64 动辄二三十万字符，正文里不放，只留形状，原文按需取。
 _IMAGE_PLACEHOLDER = "<image>"
+
+
+# ── 判据表序 22b：顶着「用户消息」标记、其实是引擎写给模型看的那几种 ──
+# 走到判据表最后一条兜底的记录里，有 2138 条不是人打的字。它们全归了 ``user.say``，
+# 于是界面把「你说」这个标签盖在了引擎的记事上——最刺眼的是那段免责声明，正文明写着
+# 「这不是用户说的话」，却顶着「你说」出现。
+#
+# 判据分两路，**先字段后正文**：
+#
+# - 后台任务通知在原始记录上有 ``origin.kind``（1275 条全带），判在字段上。
+# - 其余四种没有任何可分的字段——``userType``、``entrypoint`` 与真人原话一模一样，
+#   只能认正文开头那层包装。包装是引擎自己写死的固定标签，不是自然语言。
+#
+# **NEVER 改用 ``promptSource`` 当判据。** 它看着更干净（真人原话全是 ``typed``），
+# 但斜杠命令与命令回显那 863 条上它压根不存在，而另有 260 条真人原话同样不存在——
+# 老版本的引擎不写这个字段，缺失既不能证明是机器写的，也不能证明是人写的。
+_SLASH_COMMAND_PREFIX = "<command-name>"
+_LOCAL_OUTPUT_PREFIXES = ("<local-command-stdout>", "<local-command-stderr>")
+_BASH_INPUT_PREFIX = "<bash-input>"
+_BASH_OUTPUT_PREFIX = "<bash-stdout>"
+
+# 后台任务跑完那一刻，四种下场。机器名直接摆给人看等于没说。
+_TASK_STATUS_LABEL = {
+    "completed": "后台任务完成",
+    "failed": "后台任务失败",
+    "killed": "后台任务被系统终止",
+    "stopped": "后台任务被叫停",
+}
+
+# 正文尾部挂着的提醒块。人打的那句话在前面，引擎追加的提醒在后面，两段没有任何分隔，
+# 摆在一起读起来像是人自己说的。剥出来单独放，正文只留人真正写下的那部分。
+_TRAILING_REMINDER = re.compile(r"\s*<system-reminder>([\s\S]*?)</system-reminder>\s*$")
+
+
+def _tagged(text: str, tag: str) -> str:
+    """取 ``<tag>…</tag>`` 里那一段。没有这个标签返回空串，NEVER 抛。"""
+    match = re.search(rf"<{tag}>([\s\S]*?)</{tag}>", text)
+    return match.group(1).strip() if match else ""
+
+
+def _split_trailing_reminders(text: str) -> tuple[str, list[str]]:
+    """把正文尾部的提醒块剥下来。返回（人写的那部分，剥下来的几段）。
+
+    只剥**结尾处**的完整块，且剥完必须还剩内容：正文整条就是一个提醒块时（那是引擎
+    注入，判据表前面已经摘走）不该走到这里，真走到了也不能把正文剥空——剥空之后卡片
+    上什么都不剩，看起来像这个人发了一条空消息。
+    """
+    body = text
+    found: list[str] = []
+    while True:
+        match = _TRAILING_REMINDER.search(body)
+        if match is None:
+            break
+        remainder = body[: match.start()].strip()
+        if not remainder:
+            break
+        found.append(match.group(1).strip())
+        body = remainder
+    found.reverse()
+    return body, found
 
 
 @dataclass
@@ -1097,7 +1162,7 @@ class _Translator:
             group_id=group,
         )
 
-    # 序 17～23：顶着 user 标记的五类东西
+    # 序 17～23：顶着 user 标记的那几类东西
     def _rules_17_to_23_user(self, row: dict[str, Any]) -> None:
         # 序 17：压缩摘要不独立成条，第一趟已并进压缩边界
         if row.get("isCompactSummary") is True:
@@ -1152,18 +1217,134 @@ class _Translator:
             )
             return
 
-        # 序 23：其余归用户发言。到这里才是人说的话——本机 59173 条 user 里只剩 6156 条。
+        # 序 22b：顶着「用户消息」标记、其实是引擎写给模型看的那几种。判据与常量的
+        # 出处见 ``_SLASH_COMMAND_PREFIX`` 那一段。
+        if self._rule_22b_engine_bookkeeping(row, content):
+            return
+
+        # 序 23：其余归用户发言。到这里才是人说的话。
+        text, reminders = _split_trailing_reminders(_text_of(content))
         self._emit(
             row,
             "user.say",
             {
-                "text": _text_of(content),
+                "text": text,
                 "images": _media_blocks(content),
                 "input_mode": row.get("promptSource"),
+                # 引擎追加在这句话尾巴上的提醒。摆回正文里会读成人自己说的。
+                "reminders": reminders,
                 # 判据表的兜底不该被误读成"这是工具结果"，显式写死 False 供上层断言。
                 "is_tool_result": False,
             },
         )
+
+    def _rule_22b_engine_bookkeeping(self, row: dict[str, Any], content: Any) -> bool:
+        """序 22b。归掉了返回 True，没认出来返回 False 交给序 23。
+
+        五种各归各的，判据是「这句话是谁写的」：
+
+        - **斜杠命令**与**叹号直跑的命令**是人的动作，留在 ``user.say``，只是把那层
+          包装拆掉、把命令本身挪进 ``command``。人敲的确实是这一下，包装是引擎加的。
+        - **命令的回显**与**后台任务通知**不是人说的，归 ``context.inject``：它们就是
+          被塞进上下文的东西，跟 hook 注入是同一类事。
+        """
+        text = _text_of(content)
+        stripped = text.lstrip()
+        if not stripped:
+            return False
+
+        # 后台任务跑完的通知。判在字段上，不认正文——正文的标签集合随任务类型变化
+        # （``event`` / ``note`` / ``result`` 只在一部分里出现），认字段稳得多。
+        if _as_dict(row.get("origin")).get("kind") == "task-notification":
+            status = _tagged(stripped, "status")
+            self._emit(
+                row,
+                "context.inject",
+                {
+                    "channel": "task-notification",
+                    "source": "task-notification",
+                    "label": _TASK_STATUS_LABEL.get(status, "后台任务有动静"),
+                    # 摘要是唯一一个每条都有的字段（1277 条全覆盖），正文取它。
+                    "body": _tagged(stripped, "summary") or stripped,
+                    "task_status": status,
+                    "task_id": _tagged(stripped, "task-id"),
+                    "output_file": _tagged(stripped, "output-file"),
+                },
+            )
+            return True
+
+        # 斜杠命令。落盘时被拆成三段：命令名、命令说明、参数。**命令说明丢掉**——它是
+        # 命令名去掉斜杠（``/goal`` 与 ``goal``），摆出来是把同一个词说两遍。
+        if stripped.startswith(_SLASH_COMMAND_PREFIX):
+            self._emit(
+                row,
+                "user.say",
+                {
+                    "text": _tagged(stripped, "command-args"),
+                    "images": _media_blocks(content),
+                    "input_mode": "slash-command",
+                    "command": _tagged(stripped, "command-name"),
+                    "is_tool_result": False,
+                },
+            )
+            return True
+
+        # 叹号直跑的 shell。命令本身就是全部内容，没有另外的正文。
+        if stripped.startswith(_BASH_INPUT_PREFIX):
+            self._emit(
+                row,
+                "user.say",
+                {
+                    "text": "",
+                    "images": [],
+                    "input_mode": "bash-command",
+                    "command": _tagged(stripped, "bash-input"),
+                    "is_tool_result": False,
+                },
+            )
+            return True
+
+        # 叹号命令的输出。标准输出与标准错误恒成对出现（本机 140 条全是这个形状），
+        # 两股分开留着——出错时人要一眼看到是哪一股在说话。
+        if stripped.startswith(_BASH_OUTPUT_PREFIX):
+            out = _tagged(stripped, "bash-stdout")
+            err = _tagged(stripped, "bash-stderr")
+            self._emit(
+                row,
+                "context.inject",
+                {
+                    "channel": "local-command-output",
+                    "source": "local-command",
+                    "label": "命令输出",
+                    "body": out,
+                    "stdout": out,
+                    "stderr": err,
+                },
+            )
+            return True
+
+        # 斜杠命令的回显。跑在本机、结果贴回上下文，形态上跟叹号那一路是同一件事。
+        for prefix in _LOCAL_OUTPUT_PREFIXES:
+            if not stripped.startswith(prefix):
+                continue
+            tag = prefix[1:-1]
+            body = _tagged(stripped, tag)
+            is_err = tag.endswith("stderr")
+            self._emit(
+                row,
+                "context.inject",
+                {
+                    "channel": "local-command-output",
+                    "source": "local-command",
+                    "label": "命令输出",
+                    "body": body,
+                    "stdout": "" if is_err else body,
+                    "stderr": body if is_err else "",
+                },
+            )
+            return True
+
+        return False
 
     def _emit_tool_result(
         self, row: dict[str, Any], block: dict[str, Any], record_id: str

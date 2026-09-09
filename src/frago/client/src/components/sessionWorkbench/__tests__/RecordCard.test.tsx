@@ -328,3 +328,147 @@ describe('思考卡', () => {
     expect(screen.queryByTestId('think-empty')).toBeNull();
   });
 });
+
+describe('顶着「你说」出现的那几种机器记事', () => {
+  it('斜杠命令把命令摆成徽标，正文只留人打的那段参数', () => {
+    const args = '在 webui 添加一个 todo 的添加按钮，用户只需要填描述，剩下的交给 agent';
+    render(
+      <RecordCard
+        record={makeRecord('user.say', {
+          payload: { text: args, command: '/goal', input_mode: 'slash-command', images: [] },
+        })}
+        sessionId={SID}
+      />
+    );
+    expect(screen.getByTestId('user-command').textContent).toBe('/goal');
+    expect(screen.getByText(args)).toBeTruthy();
+    // 尖括号包装一个字都不许露给人看。
+    expect(document.body.textContent).not.toContain('command-args');
+  });
+
+  it('参数是一个取值时跟命令连成一句，不拆成两行两种字号', () => {
+    // 人打的是 `/model Opus`，一句话。拆开会读成"命令是 /model，然后我说了一句 Opus"。
+    render(
+      <RecordCard
+        record={makeRecord('user.say', {
+          payload: { text: 'Opus', command: '/model', input_mode: 'slash-command', images: [] },
+        })}
+        sessionId={SID}
+      />
+    );
+    expect(screen.getByTestId('user-command').textContent).toBe('/model Opus');
+  });
+
+  it('参数是一整段任务书时才拆开，不把它挤进徽标', () => {
+    const long = '按分析的结论，完成接口的实现并在本机完成 e2e 测试。';
+    render(
+      <RecordCard
+        record={makeRecord('user.say', {
+          payload: { text: long, command: '/goal', input_mode: 'slash-command', images: [] },
+        })}
+        sessionId={SID}
+      />
+    );
+    expect(screen.getByTestId('user-command').textContent).toBe('/goal');
+    expect(screen.getByText(long)).toBeTruthy();
+  });
+
+  it('参数带换行就一律拆开，再短也不连排', () => {
+    render(
+      <RecordCard
+        record={makeRecord('user.say', {
+          payload: { text: '完成：\n迁移', command: '/goal', input_mode: 'slash-command', images: [] },
+        })}
+        sessionId={SID}
+      />
+    );
+    expect(screen.getByTestId('user-command').textContent).toBe('/goal');
+  });
+
+  it('叹号直跑的命令没有另外的正文，不摆一句「正文为空」', () => {
+    render(
+      <RecordCard
+        record={makeRecord('user.say', {
+          payload: { text: '', command: 'uv run frago server restart', input_mode: 'bash-command', images: [] },
+        })}
+        sessionId={SID}
+      />
+    );
+    expect(screen.getByTestId('user-command').textContent).toBe('uv run frago server restart');
+    expect(screen.queryByText('（正文为空）')).toBeNull();
+  });
+
+  it('打字是常态，不在卡上标输入方式', () => {
+    render(
+      <RecordCard
+        record={makeRecord('user.say', {
+          payload: { text: '把日历挪到底部', input_mode: 'typed', images: [] },
+        })}
+        sessionId={SID}
+      />
+    );
+    expect(document.body.textContent).not.toContain('typed');
+    expect(document.body.textContent).not.toContain('输入方式');
+  });
+
+  it('引擎追加在句尾的提醒折起来，不混进人写的那段话', async () => {
+    const { container } = render(
+      <RecordCard
+        record={makeRecord('user.say', {
+          payload: {
+            text: '把扫描改成只读',
+            reminders: ['执行 Python MUST 用 uv run。'],
+            images: [],
+          },
+        })}
+        sessionId={SID}
+      />
+    );
+    expect(screen.getByTestId('user-reminders')).toBeTruthy();
+    // 折着的时候提醒的正文不在页面上，人读到的就是自己写的那一句。
+    expect(container.textContent).not.toContain('uv run');
+  });
+
+  it('后台任务通知读作那句摘要，不是一坨任务号', () => {
+    render(
+      <RecordCard
+        record={makeRecord('context.inject', {
+          payload: {
+            channel: 'task-notification',
+            source: 'task-notification',
+            label: '后台任务失败',
+            body: 'Background command "Render four previews" failed with exit code 143',
+            task_status: 'failed',
+            task_id: 'brafm2y85',
+            output_file: '/tmp/tasks/brafm2y85.output',
+          },
+        })}
+        sessionId={SID}
+      />
+    );
+    expect(screen.getByText('后台任务')).toBeTruthy();
+    expect(screen.getByText('失败')).toBeTruthy();
+    expect(document.body.textContent).not.toContain('task-notification');
+  });
+
+  it('本机命令的输出走等宽块，默认折起来', () => {
+    const { container } = render(
+      <RecordCard
+        record={makeRecord('context.inject', {
+          payload: {
+            channel: 'local-command-output',
+            source: 'local-command',
+            label: '命令输出',
+            body: 'Goal set: 在 webui 添加按钮',
+            stdout: 'Goal set: 在 webui 添加按钮',
+            stderr: '',
+          },
+        })}
+        sessionId={SID}
+      />
+    );
+    expect(screen.getByText('命令输出')).toBeTruthy();
+    expect(container.textContent).not.toContain('local-command-stdout');
+    expect(container.textContent).not.toContain('Goal set');
+  });
+});

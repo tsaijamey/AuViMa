@@ -1379,3 +1379,155 @@ def test_queue_bookkeeping_itself_stays_out_of_the_stream() -> None:
     assert len(records) == 1
     assert stats.dropped_standing == 2
     assert stats.unrecognized == 0
+
+
+# ── 判据表序 22b：顶着「用户消息」标记、其实是引擎写给模型看的那几种 ──
+# 这五种从前全落在序 23 的兜底上，界面于是把「你说」盖在了引擎的记事上。样本形状照
+# 本机真实数据，标签与嵌套一字未简化——包装是引擎写死的，简化过就测不出真数据里的坑。
+def test_rule22b_slash_command_unwraps_to_the_line_the_person_typed() -> None:
+    """人打的是 ``/goal 在 webui 添加按钮``，落盘时被拆成三段标签。
+
+    ``command-message`` 是命令名去掉斜杠（``/goal`` 与 ``goal``），丢掉——摆出来是把
+    同一个词说两遍。
+    """
+    rows = [
+        _user(
+            "u1",
+            "<command-name>/goal</command-name>\n"
+            "            <command-message>goal</command-message>\n"
+            "            <command-args>在 webui 添加一个 todo 的添加按钮</command-args>",
+        )
+    ]
+    records = translate_records(rows, SESSION)
+    assert _kinds(records) == ["user.say"]
+    payload = records[0].payload
+    assert payload["command"] == "/goal"
+    assert payload["text"] == "在 webui 添加一个 todo 的添加按钮"
+    assert payload["input_mode"] == "slash-command"
+
+
+def test_rule22b_slash_command_without_args_keeps_the_command() -> None:
+    """``/exit`` 这种没参数的，正文为空但命令必须留着，NEVER 整条变成一张空卡。"""
+    rows = [
+        _user(
+            "u1",
+            "<command-name>/exit</command-name>\n"
+            "            <command-message>exit</command-message>\n"
+            "            <command-args></command-args>",
+        )
+    ]
+    records = translate_records(rows, SESSION)
+    assert records[0].payload["command"] == "/exit"
+    assert records[0].payload["text"] == ""
+
+
+def test_rule22b_local_command_output_is_not_a_person_speaking() -> None:
+    """斜杠命令跑完的回显是**输出**，不是人说的话。"""
+    rows = [_user("u1", "<local-command-stdout>Goal set: 在 webui 添加按钮</local-command-stdout>")]
+    records = translate_records(rows, SESSION)
+    assert _kinds(records) == ["context.inject"]
+    payload = records[0].payload
+    assert payload["source"] == "local-command"
+    assert payload["stdout"] == "Goal set: 在 webui 添加按钮"
+    assert payload["stderr"] == ""
+
+
+def test_rule22b_local_command_stderr_lands_on_the_error_stream() -> None:
+    rows = [_user("u1", "<local-command-stderr>没有这个命令</local-command-stderr>")]
+    records = translate_records(rows, SESSION)
+    assert records[0].payload["stderr"] == "没有这个命令"
+    assert records[0].payload["stdout"] == ""
+
+
+def test_rule22b_bang_command_is_the_person_acting_output_is_not() -> None:
+    """叹号直跑的 shell 分两条：命令是人的动作，输出不是。
+
+    命令本身就是全部内容，没有另外的正文——所以 ``text`` 为空而 ``command`` 有值，
+    界面据此只摆那枚等宽徽标。
+    """
+    rows = [
+        _user("u1", "<bash-input>uv run frago server restart</bash-input>"),
+        _user(
+            "u2",
+            "<bash-stdout>Server restart initiated (old PID: 19195).</bash-stdout>"
+            "<bash-stderr></bash-stderr>",
+        ),
+    ]
+    records = translate_records(rows, SESSION)
+    assert _kinds(records) == ["user.say", "context.inject"]
+    assert records[0].payload["command"] == "uv run frago server restart"
+    assert records[0].payload["text"] == ""
+    assert records[0].payload["input_mode"] == "bash-command"
+    assert records[1].payload["source"] == "local-command"
+    assert records[1].payload["stdout"] == "Server restart initiated (old PID: 19195)."
+
+
+def test_rule22b_task_notification_reads_as_its_summary() -> None:
+    """后台任务通知判在 ``origin.kind`` 上，正文取那句摘要。
+
+    摘要是唯一一个每条都有的字段（本机 1277 条全覆盖）；任务号与落盘路径是给要追下去
+    的人留的，不当正文。
+    """
+    rows = [
+        _user(
+            "u1",
+            "<task-notification>\n<task-id>brafm2y85</task-id>\n"
+            "<tool-use-id>toolu_01PAj</tool-use-id>\n"
+            "<output-file>/tmp/tasks/brafm2y85.output</output-file>\n"
+            "<status>failed</status>\n"
+            '<summary>Background command "Render four previews" failed with exit code 143</summary>\n'
+            "</task-notification>",
+            origin={"kind": "task-notification"},
+            promptSource="system",
+        )
+    ]
+    records = translate_records(rows, SESSION)
+    assert _kinds(records) == ["context.inject"]
+    payload = records[0].payload
+    assert payload["source"] == "task-notification"
+    assert payload["task_status"] == "failed"
+    assert payload["task_id"] == "brafm2y85"
+    assert payload["output_file"] == "/tmp/tasks/brafm2y85.output"
+    assert payload["body"].startswith("Background command")
+
+
+def test_rule22b_never_judges_by_prompt_source() -> None:
+    """``promptSource`` 缺失既不证明是机器写的，也不证明是人写的。
+
+    老版本引擎不写这个字段：本机有 260 条真人原话缺它，另有 863 条包装消息同样缺它。
+    判据必须落在正文那层固定包装上。
+    """
+    rows = [
+        _user("u1", "帮我把日历挪到底部"),  # 缺 promptSource 的真人原话
+        _user("u2", "<command-name>/clear</command-name><command-args></command-args>"),
+    ]
+    records = translate_records(rows, SESSION)
+    assert _kinds(records) == ["user.say", "user.say"]
+    assert records[0].payload["text"] == "帮我把日历挪到底部"
+    assert "command" not in records[0].payload
+    assert records[1].payload["command"] == "/clear"
+
+
+def test_rule23_trailing_reminder_is_split_off_the_line_the_person_wrote() -> None:
+    """引擎追加在句尾的提醒，跟人写的那段话之间在档案里没有任何分隔。
+
+    照原样铺开会读成人自己说的——那些"记得用 uv run"之类的句子，人从来没打过。
+    """
+    rows = [
+        _user(
+            "u1",
+            "把扫描改成只读\n\n<system-reminder>\n执行 Python MUST 用 uv run。\n</system-reminder>",
+        )
+    ]
+    records = translate_records(rows, SESSION)
+    assert _kinds(records) == ["user.say"]
+    assert records[0].payload["text"] == "把扫描改成只读"
+    assert records[0].payload["reminders"] == ["执行 Python MUST 用 uv run。"]
+
+
+def test_rule23_a_message_that_is_only_a_reminder_is_never_emptied() -> None:
+    """剥到最后必须还剩内容。剥空了卡片上什么都不剩，看起来像人发了一条空消息。"""
+    rows = [_user("u1", "<system-reminder>只有提醒，没有人话</system-reminder>")]
+    records = translate_records(rows, SESSION)
+    assert records[0].payload["text"] == "<system-reminder>只有提醒，没有人话</system-reminder>"
+    assert records[0].payload["reminders"] == []

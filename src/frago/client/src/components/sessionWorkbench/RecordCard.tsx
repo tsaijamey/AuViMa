@@ -636,26 +636,119 @@ function UserSay({ record }: { record: WorkbenchRecord }) {
   const { t } = useTranslation();
   const p = record.payload;
   const images = list(p, 'images');
+  const mode = str(p, 'input_mode');
+  const command = str(p, 'command');
+  const reminders = list(p, 'reminders').filter((r): r is string => typeof r === 'string' && !!r);
+  const text = str(p, 'text');
+
+  // 敲在输入框里是常态，说出来等于没说。只有"当时不是直接打字"才值得标一句：插话是
+  // 趁 agent 在忙时打进去的，接口发起的那几条根本不是人坐在这儿敲的。
+  const modeKey = INPUT_MODE_LABEL_KEY[mode];
+  const inline = !!command && isInlineArg(text);
+
   return (
     <TextShell
       record={record}
-      icon={<User size={12} />}
+      icon={command ? <Terminal size={12} /> : <User size={12} />}
       label={t(KIND_LABEL_KEY['user.say'])}
       labelTone={`text-[11px] font-semibold ${ACCENT_TEXT}`}
       tone={`${ACCENT_BG} ${ACCENT_RING}`}
-      meta={
-        str(p, 'input_mode')
-          ? t('workbench.record.inputMode', { mode: str(p, 'input_mode') })
-          : undefined
-      }
+      meta={modeKey ? t(modeKey) : undefined}
     >
-      <Prose text={str(p, 'text')} />
+      {/* 命令摆成一枚等宽徽标。参数跟不跟它连排，看参数是**一个取值**还是**一段话**：
+          `/model Opus` 人打的就是连着的一句，拆成两行两种字号会读成"命令是 /model，
+          然后我说了一句 Opus"；`/goal` 后面那一整段任务书（本机最长 2601 字、82 条带
+          换行）挤进徽标里则谁都读不下去。判据取形状不取语义——单行且短的连排，带换行
+          或长的分开。 */}
+      {command ? (
+        <p
+          data-testid="user-command"
+          className="inline-block max-w-full break-all rounded-[4px] bg-bg-card px-2 py-[3px] font-mono text-[12px] text-text-primary"
+        >
+          {inline ? `${command} ${text}` : command}
+        </p>
+      ) : null}
+      {!inline && (text || !command) ? (
+        <div className={command ? 'mt-1.5' : undefined}>
+          <Prose text={text} />
+        </div>
+      ) : null}
       {images.length ? (
         <p className="mt-1.5 text-[11px] text-text-muted">
           {t('workbench.record.attachedImages', { n: images.length })}
         </p>
       ) : null}
+      {reminders.length ? <Reminders items={reminders} /> : null}
     </TextShell>
+  );
+}
+
+/**
+ * 这段参数该不该跟命令连成一句。
+ *
+ * 分界不在语义上——界面看不出 `Opus` 是取值而 `修完 bug` 是句子，也不需要看出来：
+ * **短到一行读得完的，连排都不难看**。本机 343 条斜杠命令里 21 条参数在这个范围内
+ * （`/model Opus`、`/effort low` 是主力），其余不是空的，就是 `/goal` 后面那种整段
+ * 任务书——42 条二十到六十字的指令句、132 条六十字以上、其中 82 条带换行。
+ *
+ * 二十四这个数是照真实数据划的，不是猜的：短参数那一批最长七个字，指令句那一批最短
+ * 二十二字，界线落在两批中间的空当里，两边都不贴边。
+ */
+const INLINE_ARG_MAX = 24;
+
+function isInlineArg(text: string): boolean {
+  return !!text && !text.includes('\n') && text.length <= INLINE_ARG_MAX;
+}
+
+/**
+ * 当时这句话是怎么进来的。**打字是常态，不标**——每张卡都挂一句"输入方式 typed"，
+ * 等于把机器字段名摆给人看，还把真正特殊的那两种淹掉了。
+ */
+const INPUT_MODE_LABEL_KEY: Record<string, string> = {
+  queued: 'workbench.record.inputMode.queued',
+  sdk: 'workbench.record.inputMode.sdk',
+  suggestion_accepted: 'workbench.record.inputMode.suggestion',
+  'slash-command': 'workbench.record.inputMode.slashCommand',
+  'bash-command': 'workbench.record.inputMode.bashCommand',
+};
+
+/**
+ * 引擎追加在这句话尾巴上的提醒。
+ *
+ * 它跟人写的那段话之间在档案里没有任何分隔，照原样铺开会读成人自己说的——那些"记得
+ * 用 uv run"之类的句子，人从来没打过。所以剥出来折起来，要看再点开。
+ */
+function Reminders({ items }: { items: string[] }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        data-testid="user-reminders"
+        className="inline-flex items-center gap-1 text-[11px] text-text-muted hover:text-text-secondary"
+      >
+        <ChevronRight
+          size={11}
+          className={`transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
+        />
+        {t('workbench.record.appendedReminders', { n: items.length })}
+      </button>
+      {open ? (
+        <div className="mt-1.5 space-y-1.5">
+          {items.map((text, i) => (
+            <div
+              key={i}
+              className="max-h-[200px] overflow-auto whitespace-pre-wrap break-words rounded-[6px] border border-dashed border-border-color px-2.5 py-1.5 text-[12px] leading-[1.7] text-text-muted"
+            >
+              {text}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -858,6 +951,88 @@ function QueuedCommand({ record }: { record: WorkbenchRecord }) {
       }
     >
       <Prose text={str(p, 'body')} />
+    </TextShell>
+  );
+}
+
+/** 后台任务四种下场。完成是常态不给颜色，另外三种都要人回头看一眼。 */
+const TASK_STATUS: Record<string, { key: string; tone: string }> = {
+  completed: { key: 'workbench.record.taskStatus.completed', tone: `${DONE_BG} ${DONE_TEXT}` },
+  failed: { key: 'workbench.record.taskStatus.failed', tone: `${ERR_BG} ${ERR_TEXT}` },
+  killed: { key: 'workbench.record.taskStatus.killed', tone: `${ERR_BG} ${ERR_TEXT}` },
+  stopped: { key: 'workbench.record.taskStatus.stopped', tone: `${WAIT_BG} ${WAIT_TEXT}` },
+};
+
+/**
+ * 后台任务跑完了。
+ *
+ * 这条从前顶着「你说」出现，正文是一坨带尖括号的任务号与落盘路径——人看到的是自己
+ * 说了一句机器话。它其实是引擎在报账：某个后台任务有下场了。摘要那一句是人话，摆
+ * 出来；任务号与输出文件是给要追下去的人留的，折起来。
+ */
+function TaskNotification({ record }: { record: WorkbenchRecord }) {
+  const { t } = useTranslation();
+  const p = record.payload;
+  const status = TASK_STATUS[str(p, 'task_status')];
+  const file = str(p, 'output_file');
+  return (
+    <TextShell
+      record={record}
+      icon={<Zap size={12} />}
+      label={t('workbench.record.taskNotification')}
+      tone="bg-bg-subtle"
+      meta={
+        status ? (
+          <span className={`rounded-full px-2 py-[1px] ${status.tone}`}>{t(status.key)}</span>
+        ) : undefined
+      }
+    >
+      <p className="whitespace-pre-wrap break-words text-[13px] leading-[1.7] text-text-secondary">
+        {str(p, 'body')}
+      </p>
+      {file ? (
+        <p className="mt-1.5 break-all font-mono text-[11px] text-text-muted">{file}</p>
+      ) : null}
+    </TextShell>
+  );
+}
+
+/**
+ * 在本机跑的那条命令说了什么。
+ *
+ * 斜杠命令的回显与叹号直跑的输出是同一件事：命令跑在本机，结果贴回上下文。从前它顶着
+ * 「你说」出现，正文外面还裹着一层 `<local-command-stdout>`——人会以为自己说了这句话。
+ * 它是输出，所以走等宽块；默认折起来，因为对应的那条命令就在上一张卡上，多数时候看
+ * 一眼命令就够了。
+ */
+function LocalCommandOutput({ record }: { record: WorkbenchRecord }) {
+  const { t } = useTranslation();
+  const p = record.payload;
+  const stderr = str(p, 'stderr');
+  const stdout = str(p, 'stdout') || str(p, 'body');
+  return (
+    <TextShell
+      record={record}
+      icon={<Terminal size={12} />}
+      label={t('workbench.record.localCommandOutput')}
+      tone="bg-bg-subtle"
+      meta={
+        stderr ? (
+          <span className={`rounded-full px-2 py-[1px] ${ERR_BG} ${ERR_TEXT}`}>
+            {t('workbench.record.stderr')}
+          </span>
+        ) : undefined
+      }
+      collapsible
+      defaultOpen={false}
+    >
+      <Mono text={stdout} />
+      {stderr ? (
+        <div className="mt-1.5">
+          <p className={`mb-1 text-[11px] ${ERR_TEXT}`}>{t('workbench.record.stderr')}</p>
+          <Mono text={stderr} />
+        </div>
+      ) : null}
     </TextShell>
   );
 }
@@ -1376,6 +1551,12 @@ function RecordCardInner({ record, sessionId }: RecordCardProps) {
       // 标签是给人看的，改一个字就会把归类改掉。
       if (record.payload.channel === 'queued_command') {
         return <QueuedCommand record={record} />;
+      }
+      if (record.payload.source === 'task-notification') {
+        return <TaskNotification record={record} />;
+      }
+      if (record.payload.source === 'local-command') {
+        return <LocalCommandOutput record={record} />;
       }
       return record.payload.source === 'hook' ? (
         <HookInject record={record} />

@@ -170,6 +170,48 @@ describe('useWorkbenchRecords', () => {
   });
 });
 
+describe('打开的时候档案还是空的', () => {
+  // 新建那一场必定经过这个状态：中栏在点完创建那一刻就切了过去，那时它一条记录都还没
+  // 写下。取增量要拿手头末条当起点，空手就无从下手——这几条钉住"空手也要能自己接上"，
+  // 别再让人切走再切回来才看得见内容。
+
+  it('空手开局的活会话，档案写下第一笔后自己取回来', async () => {
+    vi.useFakeTimers();
+    try {
+      let total = 0;
+      vi.stubGlobal('fetch', stubSession(() => total));
+      const { result } = renderHook(() => useWorkbenchRecords(SID, { live: true }));
+      await act(async () => {});
+      expect(result.current.records).toHaveLength(0);
+
+      total = 3;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS + 100);
+      });
+      expect(result.current.records).toHaveLength(3);
+      expect(result.current.records[0].seq).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('会话转成「在跑」那一刻当场补取，不必等下一趟轮询', async () => {
+    let total = 0;
+    vi.stubGlobal('fetch', stubSession(() => total));
+    const { result, rerender } = renderHook(
+      ({ live }) => useWorkbenchRecords(SID, { live }),
+      { initialProps: { live: false } }
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.records).toHaveLength(0);
+
+    // 它进了左栏、显示「在跑」——档案这时已经落地了。
+    total = 3;
+    rerender({ live: true });
+    await waitFor(() => expect(result.current.records).toHaveLength(3));
+  });
+});
+
 describe('刚发完话那一阵', () => {
   it('举起「在等 agent 开口」，流里已有的旧记录不算它开了口', async () => {
     vi.stubGlobal('fetch', stubSession(() => 3));
@@ -467,6 +509,39 @@ describe('信封：已发送 → 已入队列 → 成为一轮', () => {
                   '<command-name>/goal</command-name>\n            ' +
                   '<command-message>goal</command-message>\n            ' +
                   '<command-args>把日历挪到底部，settings 挪到 data 下面</command-args>',
+              },
+            }
+          : null
+      )
+    );
+    const { result } = renderHook(() => useWorkbenchRecords(SID, { live: true }));
+    await waitFor(() => expect(result.current.records).toHaveLength(3));
+
+    act(() => {
+      result.current.markSent('/goal 把日历挪到底部，settings 挪到 data 下面');
+    });
+    expect(result.current.outbound).toHaveLength(1);
+
+    landed = true;
+    await waitFor(() => expect(result.current.outbound).toHaveLength(0), { timeout: 4000 });
+  });
+
+  it('壳改由数据层拆开之后，信封照样认得出是自己那一句', async () => {
+    // 翻译层现在把三段标签拆好：命令落 `command`、人打的参数落 `text`。信封要把两半
+    // 拼回去比对——只认档案里那层原样包装的话，新记录一条都对不上，信封会一直挂着。
+    let landed = false;
+    vi.stubGlobal(
+      'fetch',
+      stubGrowing(() =>
+        landed
+          ? {
+              ...record(3),
+              ts: Date.now(),
+              kind: 'user.say',
+              payload: {
+                command: '/goal',
+                text: '把日历挪到底部，settings 挪到 data 下面',
+                input_mode: 'slash-command',
               },
             }
           : null
