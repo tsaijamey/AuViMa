@@ -597,12 +597,27 @@ export interface EndpointPresetListResponse {
   presets: EndpointPreset[];
 }
 
+/**
+ * What supplies a connection's credential.
+ *
+ * - `endpoint` — an Anthropic-protocol endpoint plus a key frago holds.
+ * - `official` — the CLI's own subscription login. Built in, never saved,
+ *   never deleted; it is what a role falls back to when nothing is bound.
+ * - `vendor_cli` — a vendor's own CLI on its own account (CodeBuddy). frago
+ *   has no key to hand it, so what the connection carries is which core to
+ *   run and which model to ask it for.
+ */
+export type ConnectionKind = 'endpoint' | 'official' | 'vendor_cli';
+
 export interface ProfileItem {
   id: string;
   name: string;
+  kind: ConnectionKind;
   endpoint_type: string;
   api_key_masked: string;
   url?: string | null;
+  /** vendor_cli only: which core this connection runs. */
+  agent_type?: string | null;
   default_model?: string | null;
   sonnet_model?: string | null;
   haiku_model?: string | null;
@@ -616,6 +631,46 @@ export interface ProfileListResponse {
   active_profile_id: string | null;
   /** Which agent CLIs the active profile was written into. */
   active_targets: string[];
+  /** What the worker role is bound to; null means the plain subscription. */
+  worker_profile_id?: string | null;
+}
+
+/** The two roles that consume a connection. */
+export type ConnectionRole = 'main' | 'worker';
+
+/**
+ * A core that runs on its own account rather than on a key frago holds.
+ *
+ * These are the cores a vendor_cli connection can name. The list is derived
+ * from the driver registry — a CLI that takes no frago profile is exactly a
+ * CLI whose credential is its own.
+ */
+export interface VendorCore {
+  agent_type: string;
+  display_name: string;
+  installed: boolean;
+  path?: string | null;
+  /** Candidates for the model field, not a whitelist. */
+  known_models: string[];
+  /** Why it takes no frago profile, in the driver's own words. */
+  reason?: string | null;
+}
+
+/** One role and the connection it is running on right now. */
+export interface RoleBinding {
+  role: ConnectionRole;
+  /** null means nothing bound, which is the subscription. */
+  profile_id: string | null;
+  connection: ProfileItem;
+  /** main only: the agent CLIs this connection was written into. */
+  targets: string[];
+}
+
+export interface ConnectionsResponse {
+  /** Every bindable connection, subscription first. */
+  connections: ProfileItem[];
+  bindings: RoleBinding[];
+  vendor_cores: VendorCore[];
 }
 
 /**
@@ -643,9 +698,12 @@ export interface ActivationTargetListResponse {
 
 export interface CreateProfileRequest {
   name: string;
+  kind?: ConnectionKind;
   endpoint_type: string;
-  api_key: string;
+  /** Empty for a vendor CLI: its credential is that CLI's own login. */
+  api_key?: string;
   url?: string | null;
+  agent_type?: string | null;
   default_model?: string | null;
   sonnet_model?: string | null;
   haiku_model?: string | null;
@@ -658,9 +716,11 @@ export interface CreateProfileRequest {
  */
 export interface UpdateProfileRequest {
   name?: string;
+  kind?: ConnectionKind;
   endpoint_type?: string;
   api_key?: string;
   url?: string | null;
+  agent_type?: string | null;
   default_model?: string | null;
   sonnet_model?: string | null;
   haiku_model?: string | null;

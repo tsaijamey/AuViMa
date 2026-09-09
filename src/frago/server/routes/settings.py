@@ -840,12 +840,18 @@ async def get_endpoint_presets() -> EndpointPresetListResponse:
 
 
 class ProfileResponse(BaseModel):
-    """Single profile response (API key is always masked)"""
+    """Single connection (API key is always masked)"""
     id: str
     name: str
+    # endpoint / official / vendor_cli — what supplies the credential. The form
+    # and the card both branch on it: a vendor CLI has no endpoint or key to
+    # show, and printing blank ones reads as a half-filled profile.
+    kind: str = "endpoint"
     endpoint_type: str
     api_key_masked: str
     url: Optional[str] = None
+    # vendor_cli only: which core this connection runs.
+    agent_type: Optional[str] = None
     default_model: Optional[str] = None
     sonnet_model: Optional[str] = None
     haiku_model: Optional[str] = None
@@ -861,6 +867,8 @@ class ProfileListResponse(BaseModel):
     # The agent CLIs the active profile was written into. Empty when nothing is
     # active — the card that shows "active" needs to be able to say where.
     active_targets: List[str] = []
+    # What the worker role is bound to. None means the plain subscription.
+    worker_profile_id: Optional[str] = None
 
 
 class ActivationTargetResponse(BaseModel):
@@ -895,9 +903,14 @@ class ActivateProfileRequest(BaseModel):
 class CreateProfileRequest(BaseModel):
     """Create profile request"""
     name: str
+    # Defaulted so that a client written before kinds existed still creates the
+    # endpoint profiles it always did.
+    kind: str = "endpoint"
     endpoint_type: str
-    api_key: str
+    # Empty for a vendor CLI connection: its credential is that CLI's own login.
+    api_key: str = ""
     url: Optional[str] = None
+    agent_type: Optional[str] = None
     default_model: Optional[str] = None
     sonnet_model: Optional[str] = None
     haiku_model: Optional[str] = None
@@ -906,9 +919,11 @@ class CreateProfileRequest(BaseModel):
 class UpdateProfileRequest(BaseModel):
     """Update profile request"""
     name: Optional[str] = None
+    kind: Optional[str] = None
     endpoint_type: Optional[str] = None
     api_key: Optional[str] = None  # None = keep existing
     url: Optional[str] = None
+    agent_type: Optional[str] = None
     default_model: Optional[str] = None
     sonnet_model: Optional[str] = None
     haiku_model: Optional[str] = None
@@ -941,7 +956,9 @@ def _profile_to_response(
     return ProfileResponse(
         id=profile.id,
         name=profile.name,
+        kind=profile.kind,
         endpoint_type=profile.endpoint_type,
+        agent_type=profile.agent_type,
         api_key_masked=_mask_api_key(profile.api_key),
         url=profile.url,
         default_model=profile.default_model,
@@ -968,6 +985,7 @@ async def get_profiles() -> ProfileListResponse:
         profiles=profiles,
         active_profile_id=store.active_profile_id,
         active_targets=list(store.active_targets),
+        worker_profile_id=store.worker_profile_id,
     )
 
 
@@ -979,8 +997,10 @@ async def create_profile(request: CreateProfileRequest) -> ApiResponse:
     try:
         profile = APIProfile(
             name=request.name,
+            kind=request.kind,
             endpoint_type=request.endpoint_type,
             api_key=request.api_key,
+            agent_type=_blank_to_none(request.agent_type),
             url=_blank_to_none(request.url),
             default_model=_blank_to_none(request.default_model),
             sonnet_model=_blank_to_none(request.sonnet_model),
@@ -1102,6 +1122,147 @@ async def deactivate_profile_endpoint() -> ApiResponse:
         return ApiResponse(status="ok", message="Switched to official authentication")
     except Exception as e:
         return ApiResponse(status="error", error=str(e))
+
+
+# ============================================================
+# Role bindings — which connection main and worker each run on
+# ============================================================
+
+
+class VendorCoreResponse(BaseModel):
+    """An agent CLI that runs on its own account rather than on a frago key.
+
+    These are the cores a vendor_cli connection can name. They are exactly the
+    ones frago cannot hand a key to, which is why they show up here instead of
+    in the activation target list.
+    """
+    agent_type: str
+    display_name: str
+    installed: bool
+    path: Optional[str] = None
+    # Model names this CLI's own service offers. Candidates for the form, not a
+    # whitelist — a name typed by hand is passed through unchanged.
+    known_models: List[str] = []
+    # Why it takes no frago profile, in the driver's own words.
+    reason: Optional[str] = None
+
+
+class RoleBindingResponse(BaseModel):
+    """One role and the connection it currently runs on."""
+    role: str
+    # None means nothing is bound, which is the plain subscription.
+    profile_id: Optional[str] = None
+    connection: ProfileResponse
+    # main only: the agent CLIs this connection was written into.
+    targets: List[str] = []
+
+
+class ConnectionsResponse(BaseModel):
+    """Everything the two role pickers need, in one round trip."""
+    connections: List[ProfileResponse]
+    bindings: List[RoleBindingResponse]
+    vendor_cores: List[VendorCoreResponse]
+
+
+class BindRoleRequest(BaseModel):
+    """Point a role at a connection. ``official`` is the built-in subscription."""
+    profile_id: str
+    # main only: which agent CLIs to write it into. Omitted keeps frago's
+    # historical default (Claude Code).
+    targets: Optional[List[str]] = None
+
+
+def _vendor_cores() -> List[VendorCoreResponse]:
+    """The cores that come with their own account.
+
+    Derived from the driver registry rather than a list kept here: a CLI that
+    takes no frago profile is exactly a CLI whose credential is its own, and
+    that fact already lives next to its other quirks. A second list here would
+    fall behind the first time someone adds a driver.
+    """
+    from frago.agent_driver.driver import registered_drivers
+
+    cores: List[VendorCoreResponse] = []
+    for agent_type, driver in sorted(registered_drivers().items()):
+        if driver.profile_apply is not None:
+            continue
+        path = driver.locate() if driver.locate else None
+        cores.append(
+            VendorCoreResponse(
+                agent_type=agent_type,
+                display_name=driver.display_name or agent_type,
+                installed=path is not None,
+                path=path,
+                known_models=list(driver.known_models),
+                reason=driver.profile_unsupported_reason,
+            )
+        )
+    return cores
+
+
+@router.get("/settings/connections", response_model=ConnectionsResponse)
+async def get_connections() -> ConnectionsResponse:
+    """Every connection a role can be bound to, plus what each role is on now.
+
+    The subscription leads the list and is not a saved row — see
+    ``profile_manager.official_connection`` for why it is built each time.
+    """
+    from frago.init.profile_manager import (
+        MAIN_ROLE,
+        ROLES,
+        list_connections,
+        load_profiles,
+        role_binding_id,
+        role_connection,
+    )
+
+    store = load_profiles()
+    connections = [
+        _profile_to_response(c, store.active_profile_id) for c in list_connections()
+    ]
+
+    bindings = [
+        RoleBindingResponse(
+            role=role,
+            profile_id=role_binding_id(role),
+            connection=_profile_to_response(role_connection(role), store.active_profile_id),
+            targets=list(store.active_targets) if role == MAIN_ROLE else [],
+        )
+        for role in ROLES
+    ]
+
+    return ConnectionsResponse(
+        connections=connections, bindings=bindings, vendor_cores=_vendor_cores()
+    )
+
+
+@router.put("/settings/connections/bindings/{role}", response_model=ApiResponse)
+async def bind_role_endpoint(role: str, request: BindRoleRequest) -> ApiResponse:
+    """Point one role at one connection.
+
+    Binding main writes the connection into the agent CLIs' own configuration
+    and so has to refresh the cached config the status card reads; binding
+    worker writes nothing anywhere and changes nothing about the running
+    process, so there is nothing to refresh.
+    """
+    from frago.init.profile_manager import MAIN_ROLE, bind_role
+
+    try:
+        bound = bind_role(role, request.profile_id, request.targets)
+    except ValueError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(status_code=404, detail=str(e))
+        # A refused binding (a vendor CLI on main, an unknown role) is the
+        # request being wrong, and its message is written to be shown as-is.
+        return ApiResponse(status="error", error=str(e))
+    except Exception as e:
+        return ApiResponse(status="error", error=str(e))
+
+    if role == MAIN_ROLE:
+        state_manager = StateManager.get_instance()
+        await state_manager.refresh_config(broadcast=True)
+
+    return ApiResponse(status="ok", message=f"{role} → {bound.name}")
 
 
 @router.post("/settings/profiles/from-current", response_model=ApiResponse)

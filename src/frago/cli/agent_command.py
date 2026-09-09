@@ -87,7 +87,6 @@ def _resolve_profile_env(profile_name: str, agent_type: str) -> dict[str, str]:
     同一套线协议，没有诚实的翻译。人明确要求跑在某个模型上、结果跑在另一个模型上，
     这件事必须当场看得见——静默吞掉会让他拿着一份不知道出自哪个模型的结果。
     """
-    from frago.agent_driver.driver import load_driver
     from frago.init.profile_manager import load_profiles
 
     store = load_profiles()
@@ -103,15 +102,40 @@ def _resolve_profile_env(profile_name: str, agent_type: str) -> dict[str, str]:
         )
         sys.exit(1)
 
+    return _profile_env_via_driver(profile, agent_type, label=f"--use-profile {profile_name!r}")
+
+
+def _profile_env_via_driver(profile, agent_type: str, *, label: str) -> dict[str, str]:
+    """把一条已找到的 profile 交给目标 agent 的 driver 翻成会话环境变量。
+
+    ``label`` 是这句话在人眼里的出处（``--use-profile X`` 还是设置里绑给 worker 的那
+    条连接）——翻译不生效时要指名道姓地说是哪一句没生效，否则人只知道结果不对、
+    不知道该去改哪里。
+    """
+    from frago.agent_driver.driver import load_driver
+
     driver = load_driver(agent_type)
     if driver.profile_env is None:
         click.echo(
-            f"[!] {agent_type} 不支持 frago profile：--use-profile {profile_name!r} "
-            f"这一轮不生效，会话跑在 {agent_type} 自己配置的模型上。",
+            f"[!] {agent_type} 不支持 frago profile：{label} 这一轮不生效，"
+            f"会话跑在 {agent_type} 自己配置的模型上。",
             err=True,
         )
         return {}
     return driver.profile_env(profile)
+
+
+def _worker_bound_connection():
+    """设置里绑给 worker 角色的那条连接，没绑（或绑的是官方订阅）时返回 None.
+
+    绑定只在这里被读一次，且只作用于本次要开的这一场会话——它 NEVER 写进任何 agent
+    的常驻配置，所以人自己敲 claude 起的会话不受影响。这正是 worker 与主 agent 的
+    区别：主 agent 那条是写进配置的，worker 这条是每次开会话时现读的。
+    """
+    from frago.init.profile_manager import KIND_OFFICIAL, WORKER_ROLE, role_connection
+
+    connection = role_connection(WORKER_ROLE)
+    return None if connection.kind == KIND_OFFICIAL else connection
 
 
 # 停机态 → 退出码契约（spec 20260607 Phase 7）。调用方 Agent 靠它判断下一步，
@@ -211,6 +235,7 @@ def _run_tmux_driver(
     dry_run: bool,
     no_persist: bool = False,
     env: dict[str, str] | None = None,
+    model: str | None = None,
     native_session_id: bool = False,
     json_out: bool = False,
     source: str = "terminal",
@@ -246,6 +271,7 @@ def _run_tmux_driver(
             session_id=sid,
             cwd=cwd,
             env=env,
+            model=model,
             native_session_id=native_session_id,
             timeout_s=float(timeout) if timeout > 0 else None,
             tmux_target=tmux_target,
@@ -609,11 +635,19 @@ def agent_run(
         click.echo("Error: prompt cannot be empty", err=True)
         sys.exit(1)
 
-    # --agent-type 是"这一次破例用谁"，不带就用界面上选定的内核（缺省 claude）。
-    if not agent_type:
-        from frago.init.config_manager import get_agent_core
+    # 显式 --use-profile 是"这一轮跑哪条连接"，没给就看设置里绑给 worker 的那一条。
+    # 绑定只在这一层生效：它决定这一场会话的内核、模型与端点，写不到任何常驻配置里。
+    worker_connection = None if use_profile else _worker_bound_connection()
 
-        agent_type = get_agent_core()
+    # --agent-type 是"这一次破例用谁"；其次是 worker 那条连接自带的内核（厂商 CLI 型
+    # 连接的内核就是它本身，换模型也只能在它自己身上换）；最后才是界面上选定的内核。
+    if not agent_type:
+        if worker_connection is not None and worker_connection.agent_type:
+            agent_type = worker_connection.agent_type
+        else:
+            from frago.init.config_manager import get_agent_core
+
+            agent_type = get_agent_core()
 
     # --session-id / --resume 互斥：一个是让 driver 派生的 frago 侧标识，一个是原样
     # 续接的 agent 真实会话 id，同时给出无法判定该走哪条。
@@ -646,8 +680,27 @@ def agent_run(
 
     # --use-profile 解析出的变量盖过 CCR，但让位于下面的显式 CLI 覆盖。翻译由目标
     # agent 的 driver 负责，故要把 agent_type 一起递进去。
-    profile_env = _resolve_profile_env(use_profile, agent_type) if use_profile else {}
+    if use_profile:
+        profile_env = _resolve_profile_env(use_profile, agent_type)
+    elif worker_connection is not None and worker_connection.api_key:
+        # 端点型连接才有可注入的东西。厂商 CLI 型走的是它自己的账号，没有 frago
+        # 能递给它的密钥，模型另经启动开关（见下面的 launch_model）。
+        profile_env = _profile_env_via_driver(
+            worker_connection, agent_type, label=f"worker 绑定的连接 {worker_connection.name!r}"
+        )
+    else:
+        profile_env = {}
     tmux_env.update(profile_env)
+
+    # 只认启动开关、不认 ANTHROPIC_MODEL 的内核（codebuddy）从这里拿模型；认环境变量
+    # 的内核忽略它，模型仍从下面的 ANTHROPIC_MODEL 走，两条路不会打架。
+    launch_model = model or (worker_connection.default_model if worker_connection else None)
+
+    if worker_connection is not None and not quiet:
+        where = f"{worker_connection.name} on {agent_type}"
+        if launch_model:
+            where += f" ({launch_model})"
+        click.echo(f"[OK] worker connection: {where}", err=json_out)
 
     # CLI 覆盖（最高优先级）。--model 走 ANTHROPIC_MODEL——profile 本就用该变量表达
     # 模型覆盖，同源同义。
@@ -676,6 +729,7 @@ def agent_run(
         dry_run=dry_run,
         no_persist=no_monitor,
         env=tmux_env or None,
+        model=launch_model,
         json_out=json_out,
         source=source,
         tmux_target=tmux_target,

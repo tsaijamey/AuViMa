@@ -5,12 +5,12 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getMainConfig, getProfiles, getActivationTargets, deactivateProfile, checkVSCode, openConfigInVSCode } from '@/api';
-import type { ProfileItem } from '@/api';
+import { getMainConfig, getProfiles, getConnections, getActivationTargets, deactivateProfile, checkVSCode, openConfigInVSCode } from '@/api';
+import type { ProfileItem, RoleBinding } from '@/api';
 import type { MainConfig } from '@/types/pywebview';
 import { Code, AlertTriangle } from 'lucide-react';
 import ProfileManager from '@/components/settings/ProfileManager';
-import AuthStatusCard from '@/components/settings/AuthStatusCard';
+import ConnectionRolesCard from '@/components/settings/ConnectionRolesCard';
 import ActiveProfileCard from '@/components/settings/ActiveProfileCard';
 import Modal from '@/components/ui/Modal';
 
@@ -28,6 +28,13 @@ export default function GeneralSettings({ openProfilesSignal = 0 }: GeneralSetti
   const { t } = useTranslation();
   const [config, setConfig] = useState<MainConfig | null>(null);
   const [profiles, setProfiles] = useState<ProfileItem[]>([]);
+  // Everything the two role rows need: the bindable connections (subscription
+  // included) and what each role is on right now.
+  const [connections, setConnections] = useState<ProfileItem[]>([]);
+  const [bindings, setBindings] = useState<RoleBinding[]>([]);
+  // agent_type → display name, shared by the role rows and the "written into"
+  // line, so neither can print a bare key like "codebuddy".
+  const [coreNames, setCoreNames] = useState<Record<string, string>>({});
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   // Which agent CLIs the active profile was written into, already resolved to
   // display names. "Active" used to say nothing about who it affected.
@@ -53,9 +60,10 @@ export default function GeneralSettings({ openProfilesSignal = 0 }: GeneralSetti
   const loadData = async () => {
     try {
       setLoading(true);
-      const [configData, profileData, targetData] = await Promise.all([
+      const [configData, profileData, connectionData, targetData] = await Promise.all([
         getMainConfig(),
         getProfiles(),
+        getConnections().catch(() => ({ connections: [], bindings: [], vendor_cores: [] })),
         // Names come from the backend roster so the card cannot drift from what
         // the picker offered.
         getActivationTargets().catch(() => ({ targets: [], default_targets: [] }))
@@ -64,6 +72,15 @@ export default function GeneralSettings({ openProfilesSignal = 0 }: GeneralSetti
       setConfig(configData);
       setProfiles(profileData.profiles);
       setActiveProfileId(profileData.active_profile_id);
+      setConnections(connectionData.connections);
+      setBindings(connectionData.bindings);
+      // Both rosters name cores, and neither one alone covers them all: the
+      // activation targets are the CLIs frago can write into, the vendor cores
+      // are the ones it cannot.
+      const names: Record<string, string> = {};
+      for (const core of connectionData.vendor_cores) names[core.agent_type] = core.display_name;
+      for (const target of targetData.targets) names[target.agent_type] = target.display_name;
+      setCoreNames(names);
       const displayNames = new Map(targetData.targets.map((target) => [target.agent_type, target.display_name]));
       setActiveTargetNames((profileData.active_targets ?? []).map((agentType) => displayNames.get(agentType) ?? agentType));
 
@@ -138,11 +155,13 @@ export default function GeneralSettings({ openProfilesSignal = 0 }: GeneralSetti
         </div>
       )}
 
-      {/* Authentication Status Card */}
-      <AuthStatusCard
-        authMethod={config.auth_method}
-        apiEndpoint={config.api_endpoint}
+      {/* Which connection each role runs on. */}
+      <ConnectionRolesCard
+        connections={connections}
+        bindings={bindings}
+        coreNames={coreNames}
         onManageProfiles={() => setShowProfileManager(true)}
+        onBindingChanged={() => loadData()}
       />
 
       {/* Active Profile Card */}

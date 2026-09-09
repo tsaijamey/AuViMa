@@ -150,6 +150,7 @@ class TmuxAgentSession:
         native_session_id: bool = False,
         conv_key: str | None = None,
         env: dict[str, str] | None = None,
+        model: str | None = None,
         width: int = 200,
         height: int = 50,
         runner: TmuxRunner | None = None,
@@ -175,6 +176,9 @@ class TmuxAgentSession:
         # ANTHROPIC_MODEL / ANTHROPIC_API_KEY）。经 new-session -e 注入，让会话内 claude
         # TUI 用指定 profile 的 endpoint/model/key 运行。值必须是字符串（tmux -e 要求）。
         self.env = env or {}
+        # 这一场跑哪个模型。多数 agent 的模型走环境变量（claude 读 ANTHROPIC_MODEL），
+        # 只认启动开关的那一类（codebuddy 的 ``--model``）从这里进 driver。
+        self.model = model
         self.cwd = cwd
         self.width = width
         self.height = height
@@ -268,6 +272,7 @@ class TmuxAgentSession:
             cwd=self.cwd,
             session_id=self.session_id,
             native_session_id=self.native_session_id,
+            model=self.model,
         )
         # driver 自己声明的基线环境变量（如 opencode 的权限放行配置）先落，调用方
         # 传进来的 env（profile 翻译结果、自定义端点等）后落、同名键覆盖它——profile
@@ -602,6 +607,7 @@ class SessionLauncher:
         native_session_id: bool = False,
         conv_key: str | None = None,
         env: dict[str, str] | None = None,
+        model: str | None = None,
         tmux_target: str | None = None,
     ) -> TmuxAgentSession:
         driver = load_driver(agent_type)
@@ -612,6 +618,7 @@ class SessionLauncher:
             native_session_id=native_session_id,
             conv_key=conv_key,
             env=env,
+            model=model,
             runner=self._runner,
             tmux_target=tmux_target,
         )
@@ -628,6 +635,7 @@ class SessionLauncher:
         native_session_id: bool = False,
         conv_key: str | None = None,
         env: dict[str, str] | None = None,
+        model: str | None = None,
         keep_alive: bool = False,
         timeout_s: float | None = None,
         tmux_target: str | None = None,
@@ -648,6 +656,7 @@ class SessionLauncher:
             native_session_id=native_session_id,
             conv_key=conv_key,
             env=env,
+            model=model,
             tmux_target=tmux_target,
         )
         try:

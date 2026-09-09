@@ -4,6 +4,7 @@ import {
   getProfiles,
   getEndpointPresets,
   getActivationTargets,
+  getConnections,
   createProfile,
   updateProfile,
   deleteProfile,
@@ -13,8 +14,10 @@ import {
 } from '@/api';
 import type {
   ActivationTarget,
+  ConnectionKind,
   EndpointPreset,
   ProfileItem,
+  VendorCore,
   CreateProfileRequest,
   UpdateProfileRequest,
 } from '@/api';
@@ -58,12 +61,21 @@ export function useProfiles({ isOpen, onClose, onProfilesChanged }: UseProfilesA
   // backend. The form used to hard-code this list and it fell behind.
   const [presets, setPresets] = useState<EndpointPreset[]>([]);
 
+  // The cores that come with their own account (CodeBuddy). These are what a
+  // vendor CLI connection names; frago holds no key for them, so the form
+  // asks for a core and a model instead of an endpoint and a key.
+  const [vendorCores, setVendorCores] = useState<VendorCore[]>([]);
+
   // View mode
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
 
   // Form state
   const [formName, setFormName] = useState('');
+  // Which shape of connection is being described. It decides which half of the
+  // form is even meaningful: an endpoint and a key, or a core and a model.
+  const [formKind, setFormKind] = useState<ConnectionKind>('endpoint');
+  const [formAgentType, setFormAgentType] = useState('');
   const [formEndpointType, setFormEndpointType] = useState<string>('deepseek');
   const [formApiKey, setFormApiKey] = useState('');
   const [formUrl, setFormUrl] = useState('');
@@ -87,6 +99,7 @@ export function useProfiles({ isOpen, onClose, onProfilesChanged }: UseProfilesA
       loadProfiles();
       loadPresets();
       loadTargets();
+      loadVendorCores();
       setViewMode('list');
       setPickingTargetsFor(null);
     }
@@ -138,6 +151,17 @@ export function useProfiles({ isOpen, onClose, onProfilesChanged }: UseProfilesA
     }
   };
 
+  const loadVendorCores = async () => {
+    try {
+      const data = await getConnections();
+      setVendorCores(data.vendor_cores);
+    } catch {
+      // Without the roster the vendor CLI option has nothing to offer, so the
+      // form stays on endpoints — which is what it could always do.
+      setVendorCores([]);
+    }
+  };
+
   const loadPresets = async () => {
     try {
       const data = await getEndpointPresets();
@@ -157,6 +181,8 @@ export function useProfiles({ isOpen, onClose, onProfilesChanged }: UseProfilesA
 
   const resetForm = () => {
     setFormName('');
+    setFormKind('endpoint');
+    setFormAgentType('');
     setFormEndpointType(presets[0]?.id ?? 'custom');
     setFormApiKey('');
     setFormUrl('');
@@ -174,6 +200,8 @@ export function useProfiles({ isOpen, onClose, onProfilesChanged }: UseProfilesA
 
   const handleEditClick = (profile: ProfileItem) => {
     setFormName(profile.name);
+    setFormKind(profile.kind);
+    setFormAgentType(profile.agent_type || '');
     setFormEndpointType(profile.endpoint_type);
     setFormApiKey(''); // Don't prefill API key
     setFormUrl(profile.url || '');
@@ -194,14 +222,33 @@ export function useProfiles({ isOpen, onClose, onProfilesChanged }: UseProfilesA
    * A preset endpoint carries no URL of its own, so switching away from
    * "Custom URL" clears the stale one rather than leaving it on the card.
    */
-  const formFields = () => ({
-    name: formName.trim(),
-    endpoint_type: formEndpointType,
-    url: formEndpointType === 'custom' ? formUrl.trim() : null,
-    default_model: formDefaultModel.trim() || null,
-    sonnet_model: formSonnetModel.trim() || null,
-    haiku_model: formHaikuModel.trim() || null,
-  });
+  const formFields = () => {
+    if (formKind === 'vendor_cli') {
+      // A vendor CLI has no endpoint, no key and no per-tier model overrides —
+      // its models come from its own service. Sending the endpoint fields
+      // anyway would save a connection that looks half-configured on the card.
+      return {
+        name: formName.trim(),
+        kind: 'vendor_cli' as ConnectionKind,
+        endpoint_type: 'vendor_cli',
+        agent_type: formAgentType,
+        url: null,
+        default_model: formDefaultModel.trim() || null,
+        sonnet_model: null,
+        haiku_model: null,
+      };
+    }
+    return {
+      name: formName.trim(),
+      kind: 'endpoint' as ConnectionKind,
+      endpoint_type: formEndpointType,
+      agent_type: null,
+      url: formEndpointType === 'custom' ? formUrl.trim() : null,
+      default_model: formDefaultModel.trim() || null,
+      sonnet_model: formSonnetModel.trim() || null,
+      haiku_model: formHaikuModel.trim() || null,
+    };
+  };
 
   const handleFormSubmit = async () => {
     if (!formName.trim()) return;
@@ -209,14 +256,17 @@ export function useProfiles({ isOpen, onClose, onProfilesChanged }: UseProfilesA
     setFormSubmitting(true);
     try {
       if (viewMode === 'add') {
-        if (!formApiKey.trim()) {
+        // Only an endpoint connection has a key to demand; a vendor CLI runs on
+        // its own login, and asking for a key there would be asking for
+        // something that does not exist.
+        if (formKind !== 'vendor_cli' && !formApiKey.trim()) {
           showToast(t('errors.apiKeyEmpty'), 'error');
           setFormSubmitting(false);
           return;
         }
         const data: CreateProfileRequest = {
           ...formFields(),
-          api_key: formApiKey.trim(),
+          api_key: formKind === 'vendor_cli' ? '' : formApiKey.trim(),
         };
         const result = await createProfile(data);
         if (result.status === 'ok') {
@@ -374,11 +424,16 @@ export function useProfiles({ isOpen, onClose, onProfilesChanged }: UseProfilesA
     pickingTargetsFor,
     pickedTargets,
     presets,
+    vendorCores,
     loading,
     viewMode,
     setViewMode,
     formName,
     setFormName,
+    formKind,
+    setFormKind,
+    formAgentType,
+    setFormAgentType,
     formEndpointType,
     setFormEndpointType,
     formApiKey,

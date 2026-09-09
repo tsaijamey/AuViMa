@@ -67,8 +67,73 @@ def _ccr_hint() -> str:
 
 @click.group("profile", cls=AgentFriendlyGroup)
 def profile_group():
-    """API profile 查看（只读）。增删改激活走 WebUI 设置。"""
+    """连接查看与角色绑定。增删改走 WebUI 设置。"""
     pass
+
+
+def _binding_lines() -> list[str]:
+    """两个角色各自跑在哪条连接上，各一行。
+
+    两行一起给，是因为它们的差别只在对照着看时才成立：主 agent 那条写进了各 cli-agent
+    自己的配置（人手起的会话也吃这一条），worker 那条只在 ``frago agent`` 开会话时现
+    读现用。单看一行，人会以为改了一处两处都变。
+    """
+    from frago.init.profile_manager import (
+        MAIN_ROLE,
+        WORKER_ROLE,
+        load_profiles,
+        role_connection,
+    )
+
+    store = load_profiles()
+    main = role_connection(MAIN_ROLE)
+    worker = role_connection(WORKER_ROLE)
+
+    main_where = f"，已写入 {', '.join(store.active_targets)}" if store.active_targets else ""
+    worker_core = f"[{worker.agent_type}] " if worker.agent_type else ""
+    worker_model = f"  model={worker.default_model}" if worker.default_model else ""
+    return [
+        f"主 agent（写进各 cli-agent 自己的配置）：{main.name}{main_where}",
+        f"worker（每次 frago agent 开会话时现读）：{worker_core}{worker.name}{worker_model}",
+    ]
+
+
+@profile_group.command("bind", cls=AgentFriendlyCommand)
+@click.argument("role", type=click.Choice(["main", "worker"]))
+@click.argument("connection", type=str)
+@click.option(
+    "--target",
+    "targets",
+    multiple=True,
+    help="main only: which cli-agents to write it into (repeatable). "
+         "Omit to keep frago's historical default (claude).",
+)
+def profile_bind(role: str, connection: str, targets: tuple[str, ...]):
+    """把一个角色指向一条连接。CONNECTION 填 profile 名、id，或 official。
+
+    \b
+      frago profile bind worker "OpenRouter Kimi K3"
+      frago profile bind main official          # 回到官方订阅
+    """
+    from frago.init.profile_manager import bind_role, list_connections
+
+    picked = next(
+        (c for c in list_connections() if connection in (c.name, c.id)),
+        None,
+    )
+    if picked is None:
+        available = ", ".join(c.name for c in list_connections())
+        raise click.ClickException(f"没有这条连接：{connection!r}。可选：{available}")
+
+    try:
+        bound = bind_role(role, picked.id, list(targets) or None)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    click.echo(f"[OK] {role} → {bound.name}")
+    click.echo()
+    for line in _binding_lines():
+        click.echo(line)
 
 
 @profile_group.command("list", cls=AgentFriendlyCommand)
@@ -89,31 +154,52 @@ def profile_list(for_hook: bool):
     if for_hook:
         click.echo(_AGENT_USAGE)
         click.echo()
+        # 绑定先于名单：不带 --use-profile 的那些调用（绝大多数）跑在哪一条，答案在这
+        # 两行里，而不在下面那张可选名单里。
+        click.echo("当前角色绑定：")
+        for line in _binding_lines():
+            click.echo(f"  {line}")
+        click.echo()
         if not profiles:
             click.echo("当前可用 profile：无（尚未在 WebUI 设置里创建任何 profile）。")
         else:
             click.echo("当前可用 profile（--use-profile 可填 name）：")
             for p in profiles:
-                active = "（激活中）" if p.id == store.active_profile_id else ""
+                active = "（主 agent 在用）" if p.id == store.active_profile_id else ""
+                core = f"[{p.agent_type}] " if p.agent_type else ""
                 click.echo(
-                    f"  - {p.name}{active}  [{p.endpoint_type}]  model={p.default_model or '-'}"
+                    f"  - {core}{p.name}{active}  [{p.endpoint_type}]  model={p.default_model or '-'}"
                 )
         click.echo()
         click.echo(_ccr_hint())
         return
 
+    click.echo()
+    for line in _binding_lines():
+        click.echo(line)
+    click.echo()
+
     if not profiles:
         click.echo("No profiles saved. Create one in the WebUI settings.")
         return
 
-    click.echo()
     for p in profiles:
-        active = " *active*" if p.id == store.active_profile_id else ""
-        click.echo(f"{p.name}{active}")
+        roles = []
+        if p.id == store.active_profile_id:
+            roles.append("main")
+        if p.id == store.worker_profile_id:
+            roles.append("worker")
+        used_by = "  ← " + "/".join(roles) if roles else ""
+        click.echo(f"{p.name}{used_by}")
         click.echo(f"  id:        {p.id}")
-        click.echo(f"  endpoint:  {p.endpoint_type}  {p.url or ''}".rstrip())
+        # 厂商 CLI 型没有端点也没有密钥——那两行照印会印出两个空壳，让人以为配漏了。
+        if p.agent_type:
+            click.echo(f"  core:      {p.agent_type}（跑它自己的账号）")
+        else:
+            click.echo(f"  endpoint:  {p.endpoint_type}  {p.url or ''}".rstrip())
         click.echo(f"  model:     {p.default_model or '-'}")
-        click.echo(f"  api_key:   {_mask_api_key(p.api_key)}")
+        if p.api_key:
+            click.echo(f"  api_key:   {_mask_api_key(p.api_key)}")
         # 激活到哪几个 cli-agent 上——"激活中"三个字本身不说明它影响了谁。
         if p.id == store.active_profile_id:
             click.echo(f"  active on: {', '.join(store.active_targets) or '-'}")

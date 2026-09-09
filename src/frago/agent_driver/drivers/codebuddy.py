@@ -569,6 +569,16 @@ def _read_answer(pane: str, prompt: str) -> str:
     return "\n".join(out).strip()
 
 
+# 服务端下发的模型名单，照抄 ``codebuddy --help``（2026-09-01 实测）。给界面当候选：
+# 这份名单 frago 推不出来，不列的话人只能凭记忆手打型号，打错要到会话起来才知道。
+# 候选而非白名单——名单会随服务端变，手打一个不在其中的照样递给 ``--model``。
+_KNOWN_MODELS: tuple[str, ...] = (
+    "auto", "hy4-preview", "hy3", "hy3-x", "glm-5.3", "glm-5.2", "glm-5.1",
+    "glm-5v-turbo", "minimax-m3", "kimi-k3-1", "kimi-k2.7", "kimi-k2.6",
+    "deepseek-v4-flash", "deepseek-v4-pro",
+)
+
+
 # ── 启动 ───────────────────────────────────────────────────────────────────
 def _launch(ctx: LaunchCtx) -> str:
     """拼启动命令。
@@ -580,6 +590,11 @@ def _launch(ctx: LaunchCtx) -> str:
     """
     sid = ctx.session_id if ctx.native_session_id else _codebuddy_session_uuid(ctx.session_id)
     parts = [_codebuddy_bin(), "--dangerously-skip-permissions"]
+    # 模型只能从这里进。codebuddy 的模型清单由 WorkBuddy 服务端下发，鉴权走它自己的
+    # 账号，``ANTHROPIC_MODEL`` 那条路对它完全无效——不接这个开关的话，一条写着
+    # hy4-preview 的连接绑给 worker 之后，worker 仍旧跑在它的缺省模型上。
+    if ctx.model:
+        parts += ["--model", ctx.model]
     settings = _write_settings(ctx)
     if settings:
         parts += ["--settings", settings]
@@ -614,6 +629,7 @@ register_driver(
         #
         # profile 同样不设：frago 的 profile 是 Anthropic 协议端点，codebuddy 走自己的
         # WorkBuddy 账号体系，``ANTHROPIC_*`` 对它无意义——没有诚实的翻译，故宁可明说。
+        known_models=_KNOWN_MODELS,
         profile_unsupported_reason=(
             "codebuddy 走 WorkBuddy 自己的账号与模型体系，frago profile 的 Anthropic "
             "端点/密钥对它无意义；换模型请用 codebuddy 自己的 --model。"

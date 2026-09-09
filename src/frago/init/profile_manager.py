@@ -1,7 +1,31 @@
-"""API endpoint profile management.
+"""Connection profile management.
 
 Provides CRUD operations for ~/.frago/profiles.json.
-Profiles store saved API endpoint configurations for quick switching.
+
+A profile is one usable connection. There are three shapes of connection and
+they are not variations of one another:
+
+- ``endpoint`` — an Anthropic-protocol endpoint plus a key. This is what a
+  profile used to be, and every profile saved before kinds existed is one.
+- ``official`` — the agent CLI's own subscription login. It has no endpoint and
+  no key: it is what a CLI runs on when frago has written nothing into it. It
+  is built on demand rather than stored, so that it cannot be deleted and the
+  role pickers always have something to fall back to.
+- ``vendor_cli`` — a vendor's own CLI running on its own account (CodeBuddy /
+  WorkBuddy). Its credential is that CLI's login, not a key frago holds, so
+  there is nothing to write into anyone else's config; what a profile of this
+  kind carries is which core to run and which model to ask it for.
+
+Two roles consume connections, and they consume them differently:
+
+- **main** — the agent the person talks to. Binding here means writing the
+  connection into the agent CLI's own configuration, so sessions started by
+  hand pick it up too. That is what ``activate_profile`` has always done, and
+  ``active_profile_id`` remains the single record of it — there is no second
+  copy of "what main is on" to drift out of step.
+- **worker** — the sessions ``frago agent`` starts. Binding here writes nothing
+  anywhere; it is read at launch and applied to that one session. Recorded in
+  ``worker_profile_id``.
 """
 
 import json
@@ -21,15 +45,38 @@ logger = logging.getLogger(__name__)
 
 PROFILES_PATH = Path.home() / ".frago" / "profiles.json"
 
+# The three shapes of connection. See the module docstring for what separates
+# them; the short version is what supplies the credential — frago holds it
+# (endpoint), the CLI's own login holds it (official, vendor_cli).
+KIND_ENDPOINT = "endpoint"
+KIND_OFFICIAL = "official"
+KIND_VENDOR_CLI = "vendor_cli"
+PROFILE_KINDS = (KIND_ENDPOINT, KIND_OFFICIAL, KIND_VENDOR_CLI)
+
+# The plain subscription is a fixed id rather than a saved row: nothing about
+# it is editable, and a row could be deleted out from under a binding.
+OFFICIAL_ID = "official"
+
+MAIN_ROLE = "main"
+WORKER_ROLE = "worker"
+ROLES = (MAIN_ROLE, WORKER_ROLE)
+
 
 class APIProfile(BaseModel):
-    """A saved API endpoint configuration."""
+    """One usable connection."""
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
     name: str
+    # Which shape of connection this is. Absent from every profile saved before
+    # kinds existed, and those are all endpoint profiles — hence the default.
+    kind: str = KIND_ENDPOINT
     endpoint_type: str  # deepseek, aliyun, kimi, minimax, custom
-    api_key: str
+    # Empty for the kinds whose credential is not frago's to hold.
+    api_key: str = ""
     url: Optional[str] = None
+    # vendor_cli only: which agent CLI to run. Meaningless for the other kinds,
+    # where the core is whatever the caller is already running.
+    agent_type: Optional[str] = None
     default_model: Optional[str] = None
     sonnet_model: Optional[str] = None
     haiku_model: Optional[str] = None
@@ -41,11 +88,19 @@ class ProfileStore(BaseModel):
     """Container for all saved profiles."""
 
     schema_version: str = "1.0"
+    # What the main role is bound to: the profile written into the agent CLIs'
+    # own configuration. None means nothing was written, which is the plain
+    # subscription.
     active_profile_id: Optional[str] = None
     # Which agent CLIs the active profile was written into. Empty when nothing
     # is active. A store written before targets existed has no such key at all,
     # and load_profiles fills it in — see there for why.
     active_targets: list[str] = Field(default_factory=list)
+    # What the worker role is bound to. Unlike the main binding this writes
+    # nothing anywhere — it is read when `frago agent` opens a session and
+    # applied to that session alone, so a worker can run somewhere the person's
+    # own agent does not.
+    worker_profile_id: Optional[str] = None
     profiles: list[APIProfile] = Field(default_factory=list)
 
 
@@ -86,7 +141,48 @@ def save_profiles(store: ProfileStore) -> None:
         os.chmod(PROFILES_PATH, 0o600)
 
 
-def _validate_profile(name: str, endpoint_type: str, url: Optional[str]) -> None:
+def official_connection() -> APIProfile:
+    """The plain subscription: what a CLI runs on when frago has written nothing.
+
+    Built rather than stored. It carries no endpoint and no key, so there would
+    be nothing to save; and if it were a row it could be deleted, leaving both
+    role pickers with an id that resolves to nothing and no listed way back to
+    the subscription the person started from.
+    """
+    return APIProfile(
+        id=OFFICIAL_ID,
+        name="Official subscription",
+        kind=KIND_OFFICIAL,
+        endpoint_type=KIND_OFFICIAL,
+    )
+
+
+def list_connections() -> list[APIProfile]:
+    """Every connection a role can be bound to, subscription first.
+
+    The subscription leads because it is the state everything starts in and
+    falls back to; a picker that lists only the saved endpoints makes "just use
+    my own login" look like something frago cannot do.
+    """
+    return [official_connection(), *load_profiles().profiles]
+
+
+def find_connection(profile_id: Optional[str]) -> Optional[APIProfile]:
+    """Resolve an id to a connection, including the built-in subscription."""
+    if not profile_id:
+        return None
+    if profile_id == OFFICIAL_ID:
+        return official_connection()
+    return get_profile(profile_id)
+
+
+def _validate_profile(
+    name: str,
+    endpoint_type: str,
+    url: Optional[str],
+    kind: str = KIND_ENDPOINT,
+    agent_type: Optional[str] = None,
+) -> None:
     """Reject the profile shapes that break something later and quietly.
 
     A nameless profile is unreachable in any list and, worse, is written to
@@ -98,6 +194,11 @@ def _validate_profile(name: str, endpoint_type: str, url: Optional[str]) -> None
     about which profile caused it. Catching all three here means the person
     editing the profile hears about it while still looking at the form.
 
+    The endpoint checks only apply to endpoint profiles. A vendor_cli profile
+    has no endpoint to check and is instead held to naming a core this build
+    actually knows how to launch — an unknown core would otherwise fail much
+    later, at session open, as "no driver registered".
+
     Raises:
         ValueError: With a message meant to be shown to the user as-is.
     """
@@ -106,9 +207,30 @@ def _validate_profile(name: str, endpoint_type: str, url: Optional[str]) -> None
     if not (name or "").strip():
         raise ValueError("Profile name cannot be empty")
 
+    if kind not in PROFILE_KINDS:
+        raise ValueError(f"Unknown profile kind '{kind}' (expected one of: {', '.join(PROFILE_KINDS)})")
+
+    if kind == KIND_OFFICIAL:
+        # There is exactly one subscription connection and frago builds it. A
+        # saved copy would be a second, editable, deletable "official" that
+        # means something different from the one the pickers fall back to.
+        raise ValueError("The official subscription is built in and cannot be saved as a profile")
+
+    if kind == KIND_VENDOR_CLI:
+        from frago.agent_driver.driver import registered_drivers
+
+        known = registered_drivers()
+        if not agent_type:
+            raise ValueError("A vendor CLI profile needs an agent core (e.g. codebuddy)")
+        if agent_type not in known:
+            raise ValueError(
+                f"Unknown agent core '{agent_type}' (known: {', '.join(sorted(known))})"
+            )
+        return
+
     if endpoint_type != "custom" and endpoint_type not in PRESET_ENDPOINTS:
-        known = ", ".join([*PRESET_ENDPOINTS, "custom"])
-        raise ValueError(f"Unknown endpoint type '{endpoint_type}' (expected one of: {known})")
+        known_types = ", ".join([*PRESET_ENDPOINTS, "custom"])
+        raise ValueError(f"Unknown endpoint type '{endpoint_type}' (expected one of: {known_types})")
 
     if endpoint_type == "custom" and not validate_endpoint_url(url or ""):
         raise ValueError("A custom endpoint needs an API URL starting with http:// or https://")
@@ -120,7 +242,9 @@ def add_profile(profile: APIProfile) -> ProfileStore:
     Raises:
         ValueError: If the endpoint type / URL combination is unusable.
     """
-    _validate_profile(profile.name, profile.endpoint_type, profile.url)
+    _validate_profile(
+        profile.name, profile.endpoint_type, profile.url, profile.kind, profile.agent_type
+    )
     store = load_profiles()
     store.profiles.append(profile)
     save_profiles(store)
@@ -154,6 +278,8 @@ def update_profile(profile_id: str, updates: dict) -> ProfileStore:
                 updates.get("name", profile.name),
                 updates.get("endpoint_type") or profile.endpoint_type,
                 updates.get("url", profile.url),
+                updates.get("kind") or profile.kind,
+                updates.get("agent_type", profile.agent_type),
             )
             for key, value in updates.items():
                 if key == "api_key" and not value:
@@ -188,6 +314,13 @@ def delete_profile(profile_id: str) -> ProfileStore:
     if store.active_profile_id == profile_id:
         store.active_profile_id = None
         store.active_targets = []
+
+    # A worker binding that outlives the profile it names is worse than no
+    # binding: `frago agent` would resolve it to nothing and silently fall back
+    # to the subscription, while the settings page still showed the deleted
+    # profile's name as the worker's connection.
+    if store.worker_profile_id == profile_id:
+        store.worker_profile_id = None
 
     save_profiles(store)
     return store
@@ -241,6 +374,17 @@ def activate_profile(
 
     if not profile:
         raise ValueError(f"Profile not found: {profile_id}")
+
+    # Checked here and not only in bind_role because this is also reachable
+    # directly (the activate endpoint, the older API clients). Letting it
+    # through would write a profile with no endpoint and no key into Claude
+    # Code's settings and leave it unable to reach anything.
+    if profile.kind == KIND_VENDOR_CLI:
+        raise ValueError(
+            f"'{profile.name}' runs on {profile.agent_type}'s own account, so frago has "
+            "nothing to write into another CLI's configuration. It can be bound to the "
+            "worker role, or started directly as your own agent."
+        )
 
     previous = list(store.active_targets)
     apply_profile(profile, resolved)
@@ -306,6 +450,81 @@ def deactivate_profile(targets: Optional[Sequence[str]] = None) -> list[str]:
         store.active_profile_id = None
     save_profiles(store)
     return handing_back
+
+
+def role_binding_id(role: str) -> Optional[str]:
+    """The raw id a role is bound to, or None when it is on the subscription.
+
+    Reads the main binding out of ``active_profile_id`` rather than a field of
+    its own. Main's binding *is* the activation — the profile written into the
+    agent CLIs' configuration — and a second field recording the same fact
+    would be a second truth to keep in step with it.
+    """
+    if role not in ROLES:
+        raise ValueError(f"Unknown role '{role}' (expected one of: {', '.join(ROLES)})")
+    store = load_profiles()
+    stored = store.active_profile_id if role == MAIN_ROLE else store.worker_profile_id
+    # An id left behind by a profile that no longer exists reads as unbound,
+    # which is also what actually happens at launch.
+    return stored if find_connection(stored) else None
+
+
+def role_connection(role: str) -> APIProfile:
+    """What a role runs on right now. Unbound resolves to the subscription."""
+    return find_connection(role_binding_id(role)) or official_connection()
+
+
+def bind_role(
+    role: str, profile_id: str, targets: Optional[Sequence[str]] = None
+) -> APIProfile:
+    """Point a role at a connection.
+
+    The two roles differ in what binding *does*, not just in what it records:
+
+    - **main** writes the connection into the agent CLIs' own configuration, so
+      it is the same act as activating, and binding the subscription is the
+      same act as deactivating. ``targets`` says which CLIs, exactly as it does
+      for ``activate_profile``.
+    - **worker** only records the choice. Nothing is written anywhere; the
+      binding is read when ``frago agent`` opens a session and applied to that
+      session alone.
+
+    A vendor CLI connection can only be bound to the worker role. Its
+    credential is that CLI's own login, so there is nothing frago could write
+    into Claude Code to put the person's own agent on it — the honest answer is
+    to say so rather than to accept the binding and change nothing.
+
+    Returns:
+        The connection now bound to that role.
+
+    Raises:
+        ValueError: Unknown role, unknown profile, or a binding this kind of
+            connection cannot serve.
+    """
+    if role not in ROLES:
+        raise ValueError(f"Unknown role '{role}' (expected one of: {', '.join(ROLES)})")
+
+    connection = find_connection(profile_id)
+    if connection is None:
+        raise ValueError(f"Profile not found: {profile_id}")
+
+    if role == MAIN_ROLE:
+        if connection.kind == KIND_VENDOR_CLI:
+            raise ValueError(
+                f"'{connection.name}' runs on {connection.agent_type}'s own account, so frago "
+                "has nothing to write into another CLI's configuration. It can be bound to the "
+                "worker role, or started directly as your own agent."
+            )
+        if connection.kind == KIND_OFFICIAL:
+            deactivate_profile()
+        else:
+            activate_profile(connection.id, targets)
+        return connection
+
+    store = load_profiles()
+    store.worker_profile_id = None if connection.kind == KIND_OFFICIAL else connection.id
+    save_profiles(store)
+    return connection
 
 
 def create_profile_from_current(name: str) -> Optional[APIProfile]:

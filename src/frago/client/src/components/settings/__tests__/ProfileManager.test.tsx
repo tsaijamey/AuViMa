@@ -25,6 +25,7 @@ vi.mock('@/stores/appStore', () => ({
 const getProfiles = vi.fn();
 const getEndpointPresets = vi.fn();
 const getActivationTargets = vi.fn();
+const getConnections = vi.fn();
 const updateProfile = vi.fn();
 const createProfile = vi.fn();
 const activateProfile = vi.fn();
@@ -33,6 +34,7 @@ vi.mock('@/api', () => ({
   getProfiles: () => getProfiles(),
   getEndpointPresets: () => getEndpointPresets(),
   getActivationTargets: () => getActivationTargets(),
+  getConnections: () => getConnections(),
   createProfile: (data: unknown) => createProfile(data),
   updateProfile: (id: string, data: unknown) => updateProfile(id, data),
   deleteProfile: vi.fn(),

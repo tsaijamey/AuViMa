@@ -33,6 +33,13 @@ class LaunchCtx:
     # True：调用方（如 WebUI 续接一个已存在的 claude 会话）给的就是真实 id，driver
     # 原样使用、跳过派生，否则会另起新会话、写进别的 jsonl，续不上原会话。
     native_session_id: bool = False
+    # 这一场要跑哪个模型；调用方没指定时为 None。
+    #
+    # 模型对多数 agent 是**环境变量**的事（claude 读 ANTHROPIC_MODEL），那条路不经过
+    # 这里。走这里的是「只认启动开关」的那一类：codebuddy 的模型由它自己的服务端下发，
+    # 不认 ANTHROPIC_*，只认 ``--model``。没有这个字段时，一条指定了模型的连接绑给
+    # worker，worker 仍会跑在该 CLI 的缺省模型上——而界面上写着别的名字。
+    model: str | None = None
 
 
 @dataclass(frozen=True)
@@ -172,6 +179,13 @@ class AgentDriver:
     # 可选：撤销 ``profile_apply``——把该 agent 的常驻配置还原成 frago 接管前的样子。
     # 与 apply 成对出现：只实现一半，用户就只能激活不能取消，或取消后留下半份配置。
     profile_revert: Callable[[], None] | None = None
+    # 可选：这一家自己下发的模型名单，给界面当候选。
+    #
+    # 只有"模型名单是这个 agent 自己的事"的那一类才填：codebuddy 的模型由 WorkBuddy
+    # 服务端下发，frago 无从推断，不列出来的话人只能凭记忆手打型号。认 ANTHROPIC_MODEL
+    # 的那几家不填——它们的模型跟着端点走，端点是谁的名单就是谁的。
+    # 名单是候选不是白名单：界面照列，但手打一个不在名单里的照样递下去。
+    known_models: tuple[str, ...] = ()
     # 可选：说明这个 agent 为什么接不了 frago 的 profile（没有 ``profile_apply`` 时）。
     # 给人看的一句话，UI 与 CLI 原样转述。空着的话用户只会看到一个禁用的复选框而不知
     # 道为什么——那比不列出它更让人困惑。

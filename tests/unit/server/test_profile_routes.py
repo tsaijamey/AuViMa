@@ -227,3 +227,116 @@ def _async_noop():
         return None
 
     return _noop
+
+
+class TestConnectionsAndBindings:
+    """The two role pickers read one endpoint and write one endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_subscription_leads_the_connection_list(self, saved_profile):
+        """It is the state everything starts in; a list without it makes
+        "just use my own login" look like something frago cannot do."""
+        from frago.server.routes.settings import get_connections
+
+        response = await get_connections()
+
+        assert response.connections[0].id == "official"
+        assert response.connections[0].kind == "official"
+        assert [c.id for c in response.connections[1:]] == [saved_profile]
+
+    @pytest.mark.asyncio
+    async def test_both_roles_report_the_subscription_when_unbound(self, tmp_profiles_path):
+        from frago.server.routes.settings import get_connections
+
+        response = await get_connections()
+
+        assert [b.role for b in response.bindings] == ["main", "worker"]
+        assert all(b.profile_id is None for b in response.bindings)
+        assert all(b.connection.kind == "official" for b in response.bindings)
+
+    @pytest.mark.asyncio
+    async def test_vendor_cores_come_from_the_driver_registry(self, tmp_profiles_path):
+        """A core that takes no frago profile is exactly a core running on its
+        own account — that fact lives in the driver, not in a list here."""
+        from frago.server.routes.settings import get_connections
+
+        response = await get_connections()
+        codebuddy = next(
+            (c for c in response.vendor_cores if c.agent_type == "codebuddy"), None
+        )
+
+        assert codebuddy is not None
+        assert "hy4-preview" in codebuddy.known_models
+        assert codebuddy.reason
+
+    @pytest.mark.asyncio
+    async def test_binding_worker_writes_no_config(self, saved_profile):
+        """The whole point of the worker row: it changes no CLI's own settings."""
+        from frago.server.routes.settings import BindRoleRequest, bind_role_endpoint
+
+        with patch("frago.init.profile_manager.activate_profile") as activate:
+            result = await bind_role_endpoint(
+                "worker", BindRoleRequest(profile_id=saved_profile)
+            )
+
+        assert result.status == "ok"
+        activate.assert_not_called()
+        assert load_profiles().worker_profile_id == saved_profile
+        assert load_profiles().active_profile_id is None
+
+    @pytest.mark.asyncio
+    async def test_binding_a_vendor_cli_to_main_is_refused_with_a_reason(
+        self, tmp_profiles_path
+    ):
+        from frago.server.routes.settings import BindRoleRequest, bind_role_endpoint
+
+        add_profile(
+            APIProfile(
+                id="vend0001",
+                name="WorkBuddy hy4",
+                kind="vendor_cli",
+                endpoint_type="vendor_cli",
+                agent_type="codebuddy",
+                default_model="hy4-preview",
+            )
+        )
+        result = await bind_role_endpoint("main", BindRoleRequest(profile_id="vend0001"))
+
+        assert result.status == "error"
+        assert "own account" in result.error
+
+    @pytest.mark.asyncio
+    async def test_a_vendor_cli_can_be_bound_to_worker(self, tmp_profiles_path):
+        from frago.server.routes.settings import (
+            BindRoleRequest,
+            bind_role_endpoint,
+            get_connections,
+        )
+
+        add_profile(
+            APIProfile(
+                id="vend0001",
+                name="WorkBuddy hy4",
+                kind="vendor_cli",
+                endpoint_type="vendor_cli",
+                agent_type="codebuddy",
+                default_model="hy4-preview",
+            )
+        )
+        result = await bind_role_endpoint("worker", BindRoleRequest(profile_id="vend0001"))
+        response = await get_connections()
+        worker = next(b for b in response.bindings if b.role == "worker")
+
+        assert result.status == "ok"
+        assert worker.connection.agent_type == "codebuddy"
+        assert worker.connection.default_model == "hy4-preview"
+
+    @pytest.mark.asyncio
+    async def test_binding_the_subscription_back_to_worker_clears_it(self, saved_profile):
+        from frago.server.routes.settings import BindRoleRequest, bind_role_endpoint
+
+        await bind_role_endpoint("worker", BindRoleRequest(profile_id=saved_profile))
+        result = await bind_role_endpoint("worker", BindRoleRequest(profile_id="official"))
+
+        assert result.status == "ok"
+        assert load_profiles().worker_profile_id is None

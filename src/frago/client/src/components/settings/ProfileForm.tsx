@@ -5,9 +5,14 @@ export default function ProfileForm({ pm }: { pm: ProfilesController }) {
   const {
     t,
     presets,
+    vendorCores,
     viewMode,
     formName,
     setFormName,
+    formKind,
+    setFormKind,
+    formAgentType,
+    setFormAgentType,
     formEndpointType,
     setFormEndpointType,
     formApiKey,
@@ -33,6 +38,12 @@ export default function ProfileForm({ pm }: { pm: ProfilesController }) {
   // elsewhere into one you can leave alone unless you mean to override it.
   const preset = presets.find((p) => p.id === formEndpointType);
 
+  // A vendor CLI is a different set of questions, not a variant of the same
+  // ones: no endpoint to reach, no key to hold, and a model list that comes
+  // from that CLI's own service rather than from a preset table.
+  const isVendorCli = formKind === 'vendor_cli';
+  const core = vendorCores.find((c) => c.agent_type === formAgentType);
+
   return (
     <div className="space-y-3">
       {/* Profile name */}
@@ -51,6 +62,93 @@ export default function ProfileForm({ pm }: { pm: ProfilesController }) {
         />
       </div>
 
+      {/* What kind of connection this is. Hidden when frago knows of no core
+          that runs on its own account — a picker with one option is noise. */}
+      {vendorCores.length > 0 && (
+        <div>
+          <label htmlFor="profile-kind" className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+            {t('settings.profiles.connectionKind')}
+          </label>
+          <select
+            id="profile-kind"
+            value={formKind}
+            onChange={(e) => {
+              const kind = e.target.value as typeof formKind;
+              setFormKind(kind);
+              // Land on a usable core straight away; an empty core is the one
+              // thing the backend will refuse to save.
+              if (kind === 'vendor_cli' && !formAgentType) {
+                setFormAgentType(vendorCores[0].agent_type);
+              }
+            }}
+            className="w-full px-3 py-2 text-sm bg-[var(--bg-base)] border border-[var(--border-color)] rounded-md text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]"
+          >
+            <option value="endpoint">{t('settings.profiles.kindEndpoint')}</option>
+            <option value="vendor_cli">{t('settings.profiles.kindVendorCli')}</option>
+          </select>
+          {isVendorCli && (
+            <p className="text-xs text-[var(--text-muted)] mt-1">
+              {t('settings.profiles.vendorCliHint')}
+            </p>
+          )}
+        </div>
+      )}
+
+      {isVendorCli ? (
+        <>
+          {/* Which core, and which of the models its own service offers. */}
+          <div>
+            <label htmlFor="profile-agent-core" className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+              {t('settings.profiles.agentCore')}
+            </label>
+            <select
+              id="profile-agent-core"
+              value={formAgentType}
+              onChange={(e) => setFormAgentType(e.target.value)}
+              className="w-full px-3 py-2 text-sm bg-[var(--bg-base)] border border-[var(--border-color)] rounded-md text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]"
+            >
+              {vendorCores.map((c) => (
+                <option key={c.agent_type} value={c.agent_type}>
+                  {c.display_name}
+                  {c.installed ? '' : ` — ${t('settings.profiles.notInstalled')}`}
+                </option>
+              ))}
+            </select>
+            {core?.reason && (
+              <p className="text-xs text-[var(--text-muted)] mt-1">{core.reason}</p>
+            )}
+          </div>
+
+          <div>
+            <label htmlFor="profile-vendor-model" className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+              {t('settings.profiles.defaultModel')}
+            </label>
+            {/* A datalist rather than a plain select: the roster is what this
+                CLI offered when frago last looked, and it moves. Typing a name
+                that is not on it has to keep working. */}
+            <input
+              id="profile-vendor-model"
+              type="text"
+              list="profile-vendor-model-options"
+              value={formDefaultModel}
+              onChange={(e) => setFormDefaultModel(e.target.value)}
+              placeholder={core?.known_models[0] ?? ''}
+              className="w-full px-3 py-2 text-sm bg-[var(--bg-base)] border border-[var(--border-color)] rounded-md text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] font-mono"
+            />
+            <datalist id="profile-vendor-model-options">
+              {(core?.known_models ?? []).map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+            {core && core.known_models.length > 0 && (
+              <p className="text-xs text-[var(--text-muted)] mt-1">
+                {t('settings.profiles.modelCandidates')}: {core.known_models.join(', ')}
+              </p>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
       {/* Endpoint type */}
       <div>
         <label htmlFor="profile-endpoint-type" className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
@@ -168,6 +266,8 @@ export default function ProfileForm({ pm }: { pm: ProfilesController }) {
           />
         </div>
       </div>
+        </>
+      )}
 
       {/* Form actions */}
       <div className="flex gap-2 pt-2">

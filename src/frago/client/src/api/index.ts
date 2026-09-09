@@ -1087,6 +1087,11 @@ export type {
   EndpointPresetListResponse,
   ProfileItem,
   ProfileListResponse,
+  ConnectionKind,
+  ConnectionRole,
+  ConnectionsResponse,
+  RoleBinding,
+  VendorCore,
   ActivationTarget,
   ActivationTargetListResponse,
   CreateProfileRequest,
@@ -1103,6 +1108,24 @@ export const getEndpointPresets = withMode(
 export const getProfiles = withMode(
   (): Promise<httpApi.ProfileListResponse> => httpApi.getProfiles(),
   (): Promise<httpApi.ProfileListResponse> => Promise.resolve({ profiles: [], active_profile_id: null, active_targets: [] }),
+);
+
+/* 桌面壳里没有这条服务。空清单会让两行角色都画不出来，所以退回一份「两个角色都在
+   官方订阅上」的诚实答案——那正是没有任何绑定时的实情。 */
+export const getConnections = withMode(
+  (): Promise<httpApi.ConnectionsResponse> => httpApi.getConnections(),
+  (): Promise<httpApi.ConnectionsResponse> => Promise.resolve({
+    connections: [],
+    bindings: [],
+    vendor_cores: [],
+  }),
+);
+
+export const bindRole = withMode(
+  (role: httpApi.ConnectionRole, profileId: string, targets?: string[]): Promise<ApiResponse> =>
+    httpApi.bindRole(role, profileId, targets),
+  (_role: httpApi.ConnectionRole, _profileId: string, _targets?: string[]): Promise<ApiResponse> =>
+    Promise.resolve({ status: 'error', error: 'Not supported in pywebview mode' }),
 );
 
 export const getActivationTargets = withMode(

@@ -81,6 +81,11 @@ import type {
   EndpointPresetListResponse,
   ProfileItem,
   ProfileListResponse,
+  ConnectionsResponse,
+  ConnectionKind,
+  ConnectionRole,
+  RoleBinding,
+  VendorCore,
   ActivationTarget,
   ActivationTargetListResponse,
   CreateProfileRequest,
@@ -186,6 +191,11 @@ export type {
   EndpointPresetListResponse,
   ProfileItem,
   ProfileListResponse,
+  ConnectionsResponse,
+  ConnectionKind,
+  ConnectionRole,
+  RoleBinding,
+  VendorCore,
   ActivationTarget,
   ActivationTargetListResponse,
   CreateProfileRequest,
@@ -996,6 +1006,35 @@ export async function activateProfile(id: string, targets?: string[]): Promise<A
 export async function deactivateProfile(): Promise<ApiResponse> {
   return fetchApi<ApiResponse>('/settings/profiles/deactivate', {
     method: 'POST',
+  });
+}
+
+/**
+ * Every bindable connection, plus what each role runs on now.
+ *
+ * One round trip rather than three: the two role rows have to agree with each
+ * other and with the list they pick from, and loading them separately showed a
+ * half-updated pair after every change.
+ */
+export async function getConnections(): Promise<ConnectionsResponse> {
+  return fetchApi<ConnectionsResponse>('/settings/connections');
+}
+
+/**
+ * Point one role at one connection.
+ *
+ * `targets` is main-only: binding main writes the connection into those agent
+ * CLIs' own configuration. Binding worker writes nothing anywhere — it is read
+ * when `frago agent` opens a session.
+ */
+export async function bindRole(
+  role: ConnectionRole,
+  profileId: string,
+  targets?: string[],
+): Promise<ApiResponse> {
+  return fetchApi<ApiResponse>(`/settings/connections/bindings/${encodeURIComponent(role)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ profile_id: profileId, targets: targets ?? null }),
   });
 }
 

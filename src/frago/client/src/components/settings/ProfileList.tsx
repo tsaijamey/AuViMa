@@ -126,6 +126,11 @@ export default function ProfileList({ pm, hasCustomConfig }: ProfileListProps) {
         <div className="space-y-2">
           {profiles.map((profile) => {
             const { provider, model } = describe(profile.endpoint_type, profile.default_model);
+            // A vendor CLI runs on its own account: there is nothing frago can
+            // write into another CLI's configuration for it, so the activate
+            // button would only ever produce a refusal. It is bound to the
+            // worker role from the connections card instead.
+            const isVendorCli = profile.kind === 'vendor_cli';
             return (
             <div
               key={profile.id}
@@ -148,19 +153,21 @@ export default function ProfileList({ pm, hasCustomConfig }: ProfileListProps) {
                   )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => handleActivateClick(profile.id)}
-                    disabled={activatingId === profile.id}
-                    className="btn btn-ghost btn-sm text-xs flex items-center gap-1 text-[var(--accent-primary)] disabled:opacity-50"
-                  >
-                    <Zap size={14} />
-                    {activatingId === profile.id
-                      ? t('settings.profiles.activating')
-                      : profile.is_active
-                        ? t('settings.profiles.changeTargets')
-                        : t('settings.profiles.activate')}
-                  </button>
+                  {!isVendorCli && (
+                    <button
+                      type="button"
+                      onClick={() => handleActivateClick(profile.id)}
+                      disabled={activatingId === profile.id}
+                      className="btn btn-ghost btn-sm text-xs flex items-center gap-1 text-[var(--accent-primary)] disabled:opacity-50"
+                    >
+                      <Zap size={14} />
+                      {activatingId === profile.id
+                        ? t('settings.profiles.activating')
+                        : profile.is_active
+                          ? t('settings.profiles.changeTargets')
+                          : t('settings.profiles.activate')}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleEditClick(profile)}
@@ -181,15 +188,28 @@ export default function ProfileList({ pm, hasCustomConfig }: ProfileListProps) {
                 </div>
               </div>
               <div className="mt-1 flex items-center gap-2 text-xs text-[var(--text-muted)] flex-wrap">
-                <span>{provider}</span>
+                {/* A vendor CLI has no endpoint and no key of frago's; printing
+                    blank ones made it look like a half-filled profile. What it
+                    does have is a core and a model. */}
+                <span>{isVendorCli ? (profile.agent_type ?? provider) : provider}</span>
                 {model && (
                   <>
                     <span>·</span>
                     <span className="font-mono">{model}</span>
                   </>
                 )}
-                <span>·</span>
-                <span className="font-mono">{profile.api_key_masked}</span>
+                {!isVendorCli && (
+                  <>
+                    <span>·</span>
+                    <span className="font-mono">{profile.api_key_masked}</span>
+                  </>
+                )}
+                {isVendorCli && (
+                  <>
+                    <span>·</span>
+                    <span>{t('settings.profiles.vendorOwnAccount')}</span>
+                  </>
+                )}
               </div>
 
               {/* Where this profile is actually in force. "Active" on its own
