@@ -590,7 +590,15 @@
       "activeOn": "已激活到",
       "targetsTitle": "激活到哪些 agent CLI？",
       "targetsUnavailable": "读不到本机的 agent CLI 名单，激活将只作用于 Claude Code。",
-      "targetNotInstalled": "本机未安装"
+      "targetNotInstalled": "本机未安装",
+      "kindEndpoint": "API 端点",
+      "kindVendorCli": "厂商 CLI（用它自己的账号）",
+      "connectionKind": "连接类型",
+      "agentCore": "内核",
+      "modelCandidates": "该 CLI 提供的模型",
+      "vendorCliHint": "frago 手里没有它的密钥，它跑的是那个 CLI 自己的登录态。选内核和模型即可。",
+      "notInstalled": "本机未安装",
+      "vendorOwnAccount": "跑它自己的账号"
     },
     "appearance": {
       "title": "外观",
@@ -687,6 +695,19 @@
       "cancel": "取消",
       "save": "保存",
       "addShort": "新增"
+    },
+    "connections": {
+      "title": "连接",
+      "mainRole": "主 agent",
+      "workerRole": "worker",
+      "mainRoleHint": "写进各 cli-agent 自己的配置，手动起的会话也用这一条。",
+      "workerRoleHint": "每次 frago agent 开会话时现读，不写进任何配置。",
+      "officialName": "官方订阅",
+      "writtenInto": "已写入",
+      "onCore": "运行于",
+      "vendorNotForMain": "它跑自己的账号，只能给 worker 用",
+      "switching": "切换中…",
+      "bindFailed": "这条连接没能切换"
     }
   },
   "init": {
@@ -1018,6 +1039,16 @@
       "subtitle": "两家的会话记录归一成同一种形状，逐条无损铺开",
       "backToList": "回到会话清单"
     },
+    "stopRun": {
+      "action": "结束运行",
+      "confirm": "确认结束",
+      "forceConfirm": "还在干活，仍要结束",
+      "stopping": "结束中…",
+      "stopped": "已结束",
+      "absent": "这一场没在跑",
+      "failed": "没关掉",
+      "hint": "结束这一场会话在 tmux 里的运行。记录还在，只是不能再往里发话"
+    },
     "status": {
       "running": "在跑",
       "error": "出错",
@@ -1043,6 +1074,10 @@
       "empty": "没有匹配的会话",
       "pinnedHeader": "置顶",
       "restHeader": "其余",
+      "orphanWorkersHeader": "不知道谁派的 worker",
+      "workerCount": "派出去 {{n}} 个 worker",
+      "expandWorkers": "展开这场派出去的 {{n}} 个 worker",
+      "collapseWorkers": "折起这场派出去的 worker",
       "summary": "共 {{total}} 场 · Claude Code {{cc}} 场 · opencode {{oc}} 场 · codex {{cx}} 场",
       "pinnedToastCollapsed": "已置顶，在折起来的置顶区里",
       "copied": "恢复命令已复制",
@@ -1161,7 +1196,13 @@
       "noOutput": "（没有输出）",
       "subtrace": "子轨迹",
       "toggle": "展开或收起",
-      "inputMode": "输入方式 {{mode}}",
+      "inputMode": {
+        "queued": "插进那一轮的",
+        "sdk": "接口发起",
+        "suggestion": "点了建议",
+        "slashCommand": "斜杠命令",
+        "bashCommand": "直接跑的命令"
+      },
       "attachedImages": "随附图片 {{n}} 张",
       "thinkEmpty": "思考了一轮，正文没落盘",
       "charCount": "{{n}} 字",
@@ -1206,7 +1247,16 @@
       "tokenOut": "出",
       "tokenFact": "{{label}} {{n}} token",
       "markersMissing": "这条消息里的边界标记缺一半",
-      "unknownKind": "界面认不出的记录形态"
+      "unknownKind": "界面认不出的记录形态",
+      "appendedReminders": "引擎追加了 {{n}} 段提醒",
+      "taskNotification": "后台任务",
+      "taskStatus": {
+        "completed": "完成",
+        "failed": "失败",
+        "killed": "被系统终止",
+        "stopped": "被叫停"
+      },
+      "localCommandOutput": "命令输出"
     },
     "report": {
       "notWired": "速记员尚未接入，下面是示意数据",

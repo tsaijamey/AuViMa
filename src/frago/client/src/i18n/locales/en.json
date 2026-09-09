@@ -590,7 +590,15 @@
       "activeOn": "Active on",
       "targetsTitle": "Activate on which agent CLIs?",
       "targetsUnavailable": "Could not read this machine's agent CLI roster; activation will apply to Claude Code only.",
-      "targetNotInstalled": "Not installed on this machine"
+      "targetNotInstalled": "Not installed on this machine",
+      "kindEndpoint": "API endpoint",
+      "kindVendorCli": "Vendor CLI (its own account)",
+      "connectionKind": "Connection type",
+      "agentCore": "Agent core",
+      "modelCandidates": "Models this CLI offers",
+      "vendorCliHint": "frago holds no key for this one — it runs on the CLI's own login. Pick which core and which model.",
+      "notInstalled": "not installed on this machine",
+      "vendorOwnAccount": "runs on its own account"
     },
     "appearance": {
       "title": "Appearance",
@@ -687,6 +695,19 @@
       "cancel": "Cancel",
       "save": "Save",
       "addShort": "Add"
+    },
+    "connections": {
+      "title": "Connections",
+      "mainRole": "Main agent",
+      "workerRole": "Worker",
+      "mainRoleHint": "Written into each agent CLI's own configuration — sessions you start by hand use it too.",
+      "workerRoleHint": "Read each time `frago agent` opens a session. Nothing is written anywhere.",
+      "officialName": "Official subscription",
+      "writtenInto": "Written into",
+      "onCore": "on",
+      "vendorNotForMain": "Runs on its own account — worker only",
+      "switching": "Switching…",
+      "bindFailed": "Could not change this connection"
     }
   },
   "init": {
@@ -1018,6 +1039,16 @@
       "subtitle": "Transcripts from every client, normalized into one shape and laid out record by record",
       "backToList": "Back to the session list"
     },
+    "stopRun": {
+      "action": "Stop run",
+      "confirm": "Confirm stop",
+      "forceConfirm": "Still working — stop anyway",
+      "stopping": "Stopping…",
+      "stopped": "Stopped",
+      "absent": "Not running",
+      "failed": "Couldn't stop",
+      "hint": "End this session's tmux run. The transcript stays; you just can't send to it anymore"
+    },
     "status": {
       "running": "Running",
       "error": "Error",
@@ -1043,6 +1074,10 @@
       "empty": "No sessions match",
       "pinnedHeader": "Pinned",
       "restHeader": "Everything else",
+      "orphanWorkersHeader": "Workers with no known caller",
+      "workerCount": "launched {{n}} workers",
+      "expandWorkers": "Show the {{n}} workers this session launched",
+      "collapseWorkers": "Hide the workers this session launched",
       "summary": "{{total}} sessions · Claude Code {{cc}} · opencode {{oc}} · codex {{cx}}",
       "pinnedToastCollapsed": "Pinned — it's in the collapsed pinned section",
       "copied": "Resume command copied",
@@ -1161,7 +1196,13 @@
       "noOutput": "(no output)",
       "subtrace": "Subtrace",
       "toggle": "Expand or collapse",
-      "inputMode": "Input {{mode}}",
+      "inputMode": {
+        "queued": "Typed mid-turn",
+        "sdk": "Sent via API",
+        "suggestion": "Accepted a suggestion",
+        "slashCommand": "Slash command",
+        "bashCommand": "Ran directly"
+      },
       "attachedImages": "{{n}} images attached",
       "thinkEmpty": "Thought a round; the text was never written down",
       "charCount": "{{n}} chars",
@@ -1206,7 +1247,16 @@
       "tokenOut": "out",
       "tokenFact": "{{label}} {{n}} tokens",
       "markersMissing": "Half the boundary markers are missing from this message",
-      "unknownKind": "A record shape this UI doesn't know"
+      "unknownKind": "A record shape this UI doesn't know",
+      "appendedReminders": "{{n}} reminder(s) appended by the engine",
+      "taskNotification": "Background task",
+      "taskStatus": {
+        "completed": "Finished",
+        "failed": "Failed",
+        "killed": "Killed by the system",
+        "stopped": "Stopped"
+      },
+      "localCommandOutput": "Command output"
     },
     "report": {
       "notWired": "The stenographer isn't wired up yet — what follows is placeholder data",
