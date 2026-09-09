@@ -17,8 +17,9 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from frago.session import adapters, codex_store, opencode_store, session_index
+from frago.session import adapters, codex_store, opencode_store, session_index, session_origin
 from frago.session.session_index import SessionStatus, TailSignals, derive_status
+from frago.session.session_origin import OriginIndex, SessionOrigin
 from frago.session.unified_record import RecordFamily, UnifiedRecord
 
 __all__ = [
@@ -84,6 +85,16 @@ class SessionCard:
     digest_stuck: str | None = None
     """当前阻塞点：状态为报错时那条报错的消息。其余情况恒为空。"""
 
+    origin: SessionOrigin = "human"
+    """这场是人自己开的，还是 frago 派出去干活的 worker。判据见
+    :mod:`frago.session.session_origin`；判不出来一律算人开的。"""
+
+    parent_session_id: str | None = None
+    """派活的那场会话。只有认得出来的 worker 才有值；人开的会话恒为空。
+
+    左栏据此把 worker 折到派活的那一场下面。认不出父亲的 worker 仍是 worker，
+    只是没地方可挂——界面另有一处收它们，NEVER 在这里编一个父亲出来。"""
+
 
 def detect_family(session_id: str) -> RecordFamily:
     """判出这个会话编号属于哪一家。
@@ -143,7 +154,7 @@ def _digests(status: SessionStatus, tail: TailSignals) -> tuple[str | None, str 
     return tail.digest_done, (tail.error_message if status == "error" else None)
 
 
-def _claude_cards() -> list[SessionCard]:
+def _claude_cards(origins: OriginIndex) -> list[SessionCard]:
     """Claude Code 那一侧的会话卡片。
 
     标题按「人定的 > 模型起的 > CLI 分配的 > 开口第一句 > 会话编号」依次退让，取到
@@ -189,12 +200,14 @@ def _claude_cards() -> list[SessionCard]:
                 status=status,
                 digest_done=digest_done,
                 digest_stuck=digest_stuck,
+                origin=origins.origin_of(sid),
+                parent_session_id=origins.parent_of(sid),
             )
         )
     return cards
 
 
-def _opencode_cards() -> list[SessionCard]:
+def _opencode_cards(origins: OriginIndex) -> list[SessionCard]:
     """opencode 那一侧的会话卡片。时刻本来就是毫秒，直接照抄。
 
     状态与摘要跟 Claude Code 那侧共用同一套判据（``session_index``），只是这一家的失效
@@ -223,12 +236,14 @@ def _opencode_cards() -> list[SessionCard]:
                 status=status,
                 digest_done=digest_done,
                 digest_stuck=digest_stuck,
+                origin=origins.origin_of(row.session_id),
+                parent_session_id=origins.parent_of(row.session_id),
             )
         )
     return cards
 
 
-def _codex_cards() -> list[SessionCard]:
+def _codex_cards(origins: OriginIndex) -> list[SessionCard]:
     """codex 那一侧的会话卡片。
 
     时刻的来源与另外两家不同：codex 不给会话存"最后更新时刻"这种字段，rollout 文件的
@@ -267,6 +282,8 @@ def _codex_cards() -> list[SessionCard]:
                 status=status,
                 digest_done=digest_done,
                 digest_stuck=digest_stuck,
+                origin=origins.origin_of(meta.session_id),
+                parent_session_id=origins.parent_of(meta.session_id),
             )
         )
     return cards
@@ -290,8 +307,12 @@ def list_sessions() -> list[SessionCard]:
 
     一家读不出来（库不存在、目录不存在）不影响另外两家——各家的读取层各自把失败收敛成
     空列表，这里不做二次兜底，也 NEVER 因为一家没数据就整份返回空。
+
+    出身索引（人开的 / frago 派的 worker、以及谁派的）取**一份**给三家共用：三家各取
+    各的，同一批卡片会按两份数据判，界面上就会出现一场会话在这一刻是主干、下一刻是子项。
     """
-    cards = _claude_cards() + _opencode_cards() + _codex_cards()
+    origins = session_origin.load_origin_index()
+    cards = _claude_cards(origins) + _opencode_cards(origins) + _codex_cards(origins)
     # 同刻时按会话编号定序，让同一份数据两次调用的结果一致。
     cards.sort(key=lambda card: (sort_key(card), card.session_id), reverse=True)
     return cards

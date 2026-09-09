@@ -24,7 +24,7 @@ def test_launch_derives_uuid5_by_default() -> None:
     """默认（非 native）：frago 标识经 uuid5 派生成合法 claude 会话 id。"""
     driver = load_driver("claude")
     cmd = driver.launch_command(LaunchCtx(cwd="/tmp", session_id="thread-xyz"))
-    derived = claude_driver._claude_session_uuid("thread-xyz")
+    derived = claude_driver.claude_session_uuid("thread-xyz")
     assert f"--session-id {derived}" in cmd
     assert "thread-xyz" not in cmd  # 原始标识不直接出现
 
@@ -37,7 +37,7 @@ def test_launch_resumes_when_transcript_exists(monkeypatch, tmp_path) -> None:
     """
     import frago.session.transcript_completion as tc
 
-    derived = claude_driver._claude_session_uuid("thread-xyz")
+    derived = claude_driver.claude_session_uuid("thread-xyz")
     fake = tmp_path / f"{derived}.jsonl"
     fake.write_text("{}\n")
 
@@ -59,7 +59,7 @@ def test_launch_session_id_when_transcript_absent(monkeypatch) -> None:
     monkeypatch.setattr(tc, "locate_transcript", lambda *_a, **_k: None)
 
     driver = load_driver("claude")
-    derived = claude_driver._claude_session_uuid("thread-new")
+    derived = claude_driver.claude_session_uuid("thread-new")
     cmd = driver.launch_command(LaunchCtx(cwd="/home/u", session_id="thread-new"))
     assert f"--session-id {derived}" in cmd
     assert "--resume" not in cmd
@@ -83,7 +83,7 @@ def test_launch_resumes_raw_id_when_native_and_transcript_exists(monkeypatch) ->
     assert f"--resume {real_sid}" in cmd
     assert "--session-id" not in cmd
     # 没有被套一层 uuid5。
-    assert claude_driver._claude_session_uuid(real_sid) not in cmd
+    assert claude_driver.claude_session_uuid(real_sid) not in cmd
 
 
 def test_launch_creates_raw_id_when_native_and_no_transcript(monkeypatch) -> None:
@@ -104,4 +104,4 @@ def test_launch_creates_raw_id_when_native_and_no_transcript(monkeypatch) -> Non
     assert f"--session-id {fresh_sid}" in cmd
     assert "--resume" not in cmd
     # 同样不套 uuid5：页面读的就是这个 id。
-    assert claude_driver._claude_session_uuid(fresh_sid) not in cmd
+    assert claude_driver.claude_session_uuid(fresh_sid) not in cmd

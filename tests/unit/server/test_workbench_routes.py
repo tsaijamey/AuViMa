@@ -114,6 +114,10 @@ class TestSessionList:
             "status",
             "digest_done",
             "digest_stuck",
+            # 这场是人开的还是 frago 派出去的 worker、以及谁派的。左栏据此把清单摆成
+            # 两层，缺了就只能靠编号形状在界面上再猜一遍。
+            "origin",
+            "parent_session_id",
         }
 
     def test_每行都带状态与摘要(self, client, monkeypatch):

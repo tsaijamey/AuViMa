@@ -48,6 +48,8 @@ function session(over: Partial<WorkbenchSession> & Pick<WorkbenchSession, 'sessi
     status: 'running',
     digest_done: null,
     digest_stuck: null,
+    origin: 'human',
+    parent_session_id: null,
     ...over,
   };
 }

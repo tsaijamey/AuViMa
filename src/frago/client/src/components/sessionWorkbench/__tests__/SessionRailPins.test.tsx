@@ -63,6 +63,8 @@ function session(
     status: 'done',
     digest_done: null,
     digest_stuck: null,
+    origin: 'human',
+    parent_session_id: null,
     ...over,
   };
 }

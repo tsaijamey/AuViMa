@@ -3,6 +3,12 @@
  *
  * 三家（Claude Code / opencode / codex）的会话在核心数据层就合并排好了，这里不重排。
  *
+ * **清单是两层的：主干是主会话，frago 派出去的 worker 折在派活的那一场下面。** 本机两千多
+ * 场会话里一千五百场是 worker，摊平在同一列里，人找自己刚才谈的那一场要一直往下翻。判据
+ * 全在服务端（每张卡带着「谁开的」与「谁派的活」两个字段），这里只负责摆位置：派活的那场
+ * 也在清单里就折进去，认不出出处的收进末尾那一区，其余留在主干。搜索时整棵树摊开——那一刻
+ * 人是在找某一句话，命中的要是一个折起来的 worker，折着就等于没搜到。
+ *
  * **筛选是两个维度，不是一个。** 状态答「现在什么情况」，时间范围答「哪一段时间的」，
  * 两者并存、互不替代。按来源筛的那一维不在这里——一千多场 Claude Code 会话摆在一起，
  * 知道它们都来自 Claude Code 没有任何用；来源仍在每张卡上看得见，改由底部汇总报两家各几场。
@@ -94,11 +100,34 @@ const STATUS_DOT: Record<string, string> = {
   idle: 'bg-text-dim',
 };
 
-/** 列表里的一行：要么是分区标题，要么是一张会话卡。 */
+/**
+ * 列表里的一行：分区标题，或一张会话卡。
+ *
+ * 会话卡带着它在这棵树里的位置：`nested` 是"挂在上面那一行下面的 worker"，
+ * `workerCount` 是这一行自己派出去过几个。两样都由 `rows` 一次算完，卡片不自己推导。
+ */
 type RailRow =
   | { kind: 'pinned-header' }
   | { kind: 'rest-header' }
-  | { kind: 'session'; session: WorkbenchSession };
+  | { kind: 'workers-header' }
+  | {
+      kind: 'session';
+      session: WorkbenchSession;
+      nested?: boolean;
+      workerCount?: number;
+      workersExpanded?: boolean;
+      groupPos?: GroupPos;
+    };
+
+/**
+ * 展开之后，主会话与它的 worker 被一个框圈在一起。框跨了好几行，而每一行在窗口化列表
+ * 里是独立的一项，所以框只能拆着画：头一行画上半框、中间几行画两侧、末一行收底。
+ * 三段拼起来就是一个完整的框，与折叠时那张纸同一套颜色、粗细、圆角。
+ *
+ * 这不是单边色条：三段合起来是四条边，颜色是清单里到处在用的那个分隔线色，不带任何强调
+ * 语义——它说的是"这几行是一组"，不是"这一行被选中了"。
+ */
+type GroupPos = 'head' | 'mid' | 'tail';
 
 export interface SessionRailProps {
   state: WorkbenchSessionsState;
@@ -149,6 +178,10 @@ export default function SessionRail({
   const pins = useSessionPins();
   const [newOpen, setNewOpen] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  /** 哪几场把自己派出去的 worker 展开着。默认一场都不展开——清单的主干是主会话。 */
+  const [expandedWorkers, setExpandedWorkers] = useState<Set<string>>(new Set());
+  /** 认不出谁派的那堆 worker 那一区是不是展开着。默认折起来。 */
+  const [orphansOpen, setOrphansOpen] = useState(false);
 
   const familyCounts = useMemo(() => {
     let cc = 0;
@@ -177,11 +210,52 @@ export default function SessionRail({
       .sort((a, b) => rank.get(a.session_id)! - rank.get(b.session_id)!);
   }, [searched, pins.pinned]);
 
-  /** 置顶的那几场不在下面再出现一次。同一场摆两处，人会以为是两场。 */
-  const restRows = useMemo(
-    () => (pins.pinned.length ? visible.filter((s) => !pins.isPinned(s.session_id)) : visible),
-    [visible, pins]
-  );
+  /**
+   * 把那一列会话摆成两层：主干是主会话，frago 派出去的 worker 折在派活的那一场下面。
+   *
+   * **为什么要分层。** 本机两千多场会话里一千五百场是 worker，它们与人自己开的会话
+   * 混在同一列里，人找自己刚才谈的那一场要一直往下翻。分层之后主干只剩人开的那几百场，
+   * worker 一个都没丢，只是收在它自己该在的地方。
+   *
+   * 三种去处，判据只看服务端给的两个字段：
+   * - 派活的那场会话**也在当前这份清单里** → 折到它下面。
+   * - 是 worker 但认不出谁派的（或派活的那场被筛掉了）→ 收进末尾那一区。
+   * - 其余 → 主干。
+   *
+   * **搜索的时候整棵树摊开。** 那一刻人是在找某一句话，命中的要是一个折起来的 worker，
+   * 折着就等于没搜到。
+   */
+  const { trunkRows, childrenOf, orphanRows } = useMemo(() => {
+    // 认父亲要在**整份清单**里认，不是只在下面那一片里认：派活的那场会话可能被置顶了，
+    // 只看下面那一片的话，它的 worker 会认不出父亲、掉进末尾那一区——而它的父亲就摆在
+    // 屏幕最上面。
+    const present = new Set(visible.map((s) => s.session_id));
+    const children = new Map<string, WorkbenchSession[]>();
+    const trunk: WorkbenchSession[] = [];
+    const orphans: WorkbenchSession[] = [];
+    for (const session of visible) {
+      const parent = session.parent_session_id;
+      const nestable =
+        Boolean(parent) &&
+        parent !== session.session_id &&
+        present.has(parent as string) &&
+        // 自己也被置顶的那几场留在置顶区，不再折进父亲下面：同一场摆两处，人会以为是两场。
+        !pins.isPinned(session.session_id);
+      if (nestable) {
+        const bucket = children.get(parent as string);
+        if (bucket) bucket.push(session);
+        else children.set(parent as string, [session]);
+        continue;
+      }
+      // 置顶的那几场由置顶区去摆，这里只管下面那一片。
+      if (pins.isPinned(session.session_id)) continue;
+      if (session.origin === 'worker') orphans.push(session);
+      else trunk.push(session);
+    }
+    return { trunkRows: trunk, childrenOf: children, orphanRows: orphans };
+  }, [visible, pins]);
+
+  const searching = search.trim().length > 0;
 
   /**
    * 摆进列表的每一行：分区标题与会话卡走同一条队。
@@ -191,18 +265,73 @@ export default function SessionRail({
    * 就撞见过整片清单已经摆好、标题还没出现。标题是折叠开关所在，它不该等任何东西。
    *
    * 一场都没置顶时连标题都不长，整片就是从前那个单列清单——空着的分区标题只是噪音。
+   * 末尾那一区同理：没有认不出出处的 worker 就不长那行标题。
    */
   const rows = useMemo<RailRow[]>(() => {
-    if (!pins.pinned.length) return restRows.map((session) => ({ kind: 'session' as const, session }));
+    const trunkWithKids = (session: WorkbenchSession): RailRow[] => {
+      const kids = childrenOf.get(session.session_id) ?? [];
+      const expanded = searching || expandedWorkers.has(session.session_id);
+      const head: RailRow = {
+        kind: 'session',
+        session,
+        workerCount: kids.length,
+        workersExpanded: expanded,
+      };
+      if (!kids.length || !expanded) return [head];
+      // 展开之后这一组被一个框圈起来：主会话那行画上半框，子会话画两侧，末一行收底。
+      return [
+        { ...head, groupPos: 'head' as const },
+        ...kids.map((kid, i) => ({
+          kind: 'session' as const,
+          session: kid,
+          nested: true,
+          groupPos: (i === kids.length - 1 ? 'tail' : 'mid') as GroupPos,
+        })),
+      ];
+    };
+
+    const body: RailRow[] = trunkRows.flatMap(trunkWithKids);
+    const tail: RailRow[] = orphanRows.length
+      ? [
+          { kind: 'workers-header' as const },
+          ...(orphansOpen || searching
+            ? orphanRows.map((session) => ({
+                kind: 'session' as const,
+                session,
+                nested: true,
+              }))
+            : []),
+        ]
+      : [];
+
+    if (!pins.pinned.length) return [...body, ...tail];
     return [
       { kind: 'pinned-header' as const },
-      ...(pins.collapsed
-        ? []
-        : pinnedRows.map((session) => ({ kind: 'session' as const, session }))),
+      // 置顶的那几场同样带着自己那一叠：置顶只改"摆在哪儿"，不改"它底下有没有东西"。
+      ...(pins.collapsed ? [] : pinnedRows.flatMap(trunkWithKids)),
       { kind: 'rest-header' as const },
-      ...restRows.map((session) => ({ kind: 'session' as const, session })),
+      ...body,
+      ...tail,
     ];
-  }, [pins.pinned.length, pins.collapsed, pinnedRows, restRows]);
+  }, [
+    pins.pinned.length,
+    pins.collapsed,
+    pinnedRows,
+    trunkRows,
+    childrenOf,
+    orphanRows,
+    expandedWorkers,
+    orphansOpen,
+    searching,
+  ]);
+
+  const toggleWorkers = (session: WorkbenchSession) => {
+    setExpandedWorkers((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(session.session_id)) next.add(session.session_id);
+      return next;
+    });
+  };
 
   const handleTogglePin = async (session: WorkbenchSession) => {
     const wasPinned = pins.isPinned(session.session_id);
@@ -452,26 +581,72 @@ export default function SessionRail({
                     className="px-2.5 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wide text-text-muted"
                   >
                     {t('workbench.rail.restHeader')}{' '}
-                    <span className="font-mono opacity-70">{restRows.length}</span>
+                    {/* 报的是主干那几场。折在各自主会话下面的 worker 算在那一行的展开钮上，
+                        认不出出处的算在下面那一区——每一场只被数一次。 */}
+                    <span className="font-mono opacity-70">{trunkRows.length}</span>
                   </div>
                 );
               }
+              if (row.kind === 'workers-header') {
+                return (
+                  <button
+                    type="button"
+                    onClick={() => setOrphansOpen((v) => !v)}
+                    aria-expanded={orphansOpen || searching}
+                    data-testid="workers-header"
+                    className="flex w-full items-center gap-1.5 px-2.5 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wide text-text-muted transition-colors duration-200 hover:text-text-secondary"
+                  >
+                    {orphansOpen || searching ? (
+                      <ChevronDown size={12} />
+                    ) : (
+                      <ChevronRight size={12} />
+                    )}
+                    <span>{t('workbench.rail.orphanWorkersHeader')}</span>
+                    <span className="font-mono opacity-70">{orphanRows.length}</span>
+                  </button>
+                );
+              }
               const session = row.session;
+              const pos = row.groupPos;
+              /* 框的三段。同一套值：1px、清单的分隔线色、8px 圆角——与折叠时那张纸
+                 一模一样，展开只是把那张纸撑开成一个圈住整组的框。 */
+              const box =
+                pos === 'head'
+                  ? 'rounded-t-[8px] border border-b-0 border-border-color'
+                  : pos === 'mid'
+                    ? 'border-x border-border-color'
+                    : pos === 'tail'
+                      ? 'rounded-b-[8px] border border-t-0 border-border-color'
+                      : '';
               return (
-                <div className="px-2">
+                /* 从属行往里缩一格。缩进是**位置**，不是装饰：一眼就看得出这一行不与
+                   上面那一行并列，而且不占用颜色——颜色在这张清单里只留给在跑与出错。
+                   在框里的时候缩进改到框**内**做，否则框会被子会话推得比主会话窄一截，
+                   看起来是两个框而不是一个。 */
+                <div className={row.nested && !pos ? 'pl-6 pr-2' : 'px-2'}>
+                  <div className={box} data-group={pos}>
+                    <div className={row.nested && pos ? 'pl-4' : ''}>
                   <SessionItem
                     session={session}
                     selected={session.session_id === selectedId}
                     copied={copiedId === session.session_id}
                     pinned={pins.isPinned(session.session_id)}
                     contentMatch={content.matches.get(session.session_id) ?? null}
+                    nested={row.nested}
+                    workerCount={row.workerCount}
+                    workersExpanded={row.workersExpanded}
                     onSelect={onSelect}
                     onCopy={handleCopy}
                     onTogglePin={handleTogglePin}
-                  />
+                    onToggleWorkers={toggleWorkers}
+                      />
+                    </div>
+                  </div>
                   {/* 行与行之间的间隔。连同每行自己的 py-2，行间总共留出 24px，
-                      而行内最大的间距是 4px——差出六倍，清单才读得出是一行一行的。 */}
-                  <div className="h-2" />
+                      而行内最大的间距是 4px——差出六倍，清单才读得出是一行一行的。
+                      **一组之内不留这道缝**：留了框就断成几截，一眼看过去是几个小框
+                      挨着，而不是一个圈住整组的框。 */}
+                  {pos === 'head' || pos === 'mid' ? null : <div className="h-2" />}
                 </div>
               );
             }}

@@ -153,6 +153,53 @@ def _emit_and_exit(
     sys.exit(exit_code)
 
 
+def _parent_session_id() -> str | None:
+    """派这次活的是哪一场会话。认不出来返回 None。
+
+    主 agent 是在自己的会话里敲的这条命令，它自己的会话编号就在环境里
+    （``FRAGO_SESSION_ID`` / ``CLAUDE_CODE_SESSION_ID``）。**只认环境里明说的那个**：
+    ``resolve_self`` 还有一条按"当前目录最近写入的记录"推断的兜底，同一个目录下开着
+    两场会话时会挑错——把 worker 挂到一场毫无关系的会话下面，比不挂糟得多。
+    """
+    with contextlib.suppress(Exception):
+        from frago.session.self_id import resolve_self
+
+        me = resolve_self()
+        if me is not None and me.certain:
+            return me.session_id
+    return None
+
+
+def _record_worker_launch(
+    *,
+    sid: str,
+    agent_type: str,
+    cwd: str,
+    prompt_text: str,
+    native_session_id: bool,
+) -> None:
+    """把这次派活记进账本，供左栏把 worker 折到派活的那一场下面。
+
+    记的是**子会话在目标 agent 那边的真实编号**，不是 frago 自己那个把手——清单上摆的
+    是前者。claude 那家的编号由 frago 的编号派生而来，派生规则问 driver 要（NEVER 在这里
+    抄一份）；其余几家的真实编号要等 agent 起来之后才认领得到，这里还不知道，故不记——
+    宁可少认几场，也不往账本里写一个对不上任何会话的编号。
+    """
+    if agent_type != "claude":
+        return
+    with contextlib.suppress(Exception):
+        from frago.agent_driver.drivers.claude import session_id_for
+        from frago.session.session_origin import record_launch
+
+        record_launch(
+            child_session_id=session_id_for(sid, native=native_session_id),
+            parent_session_id=_parent_session_id(),
+            agent_type=agent_type,
+            cwd=cwd,
+            prompt_head=prompt_text,
+        )
+
+
 def _run_tmux_driver(
     prompt_text: str,
     *,
@@ -227,6 +274,16 @@ def _run_tmux_driver(
             human_note=f"Error: agent driver failed: {exc}",
         )
         return
+
+    # 这一场确实起来了（哪怕这一轮超时或要人介入，会话本身是在的），记一笔它是谁
+    # 派出去的。放在 run 之后：起都没起来的会话记进账本，只会让清单上多一行点不开的卡片。
+    _record_worker_launch(
+        sid=sid,
+        agent_type=agent_type,
+        cwd=cwd,
+        prompt_text=prompt_text,
+        native_session_id=native_session_id,
+    )
 
     # Normalize this turn into the session subsystem (Web UI / session list).
     if not no_persist:

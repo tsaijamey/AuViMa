@@ -3,7 +3,7 @@
  */
 
 import { useTranslation } from 'react-i18next';
-import { Check, Copy, Pin, Quote } from 'lucide-react';
+import { Check, Copy, CornerDownRight, Pin, Quote } from 'lucide-react';
 import i18n from '@/i18n';
 import {
   activityTs,
@@ -81,6 +81,35 @@ export function relativeTime(ts: number, now: number = Date.now()): string {
   ).padStart(2, '0')}`;
 }
 
+/**
+ * 展开那一叠的三角。
+ *
+ * **实心，不是细线。** 从前这里是一条 lucide 的箭头，1.5px 描边、中性灰、没有底——
+ * 在 11px 的字号旁边它和右边那两颗图标一样重，读出来是"又一个图标"，不是"这里能按"。
+ * 实心三角是文件夹展开这件事几十年的常规写法（访达就是它），同样大小下面积大得多，
+ * 一眼分得出。
+ *
+ * **不用品牌绿。** 侧栏的规矩是绿色只承担选中、当前、活跃这几样；能展开是个不带状态的
+ * 控件，主干里两百来张卡常年挂着一点绿，会把真正需要被看见的那两档淹掉。让它看得出能按，
+ * 靠的是形状与底色，不是颜色。
+ *
+ * 转 90 度而不是换一个图标：形状不变、方向变，人才看得出是同一个东西的两个状态。
+ */
+function DisclosureTriangle({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      width="9"
+      height="9"
+      viewBox="0 0 8 8"
+      fill="currentColor"
+      aria-hidden="true"
+      className={`transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`}
+    >
+      <path d="M2 0.5 L7 4 L2 7.5 Z" />
+    </svg>
+  );
+}
+
 function StatusDot({ status }: { status: SessionStatus }) {
   const { statusLabel } = useWorkbenchLabels();
   return (
@@ -134,9 +163,13 @@ export default function SessionItem({
   copied,
   pinned = false,
   contentMatch,
+  nested = false,
+  workerCount = 0,
+  workersExpanded = false,
   onSelect,
   onCopy,
   onTogglePin,
+  onToggleWorkers,
 }: {
   session: WorkbenchSession;
   selected: boolean;
@@ -145,43 +178,127 @@ export default function SessionItem({
   pinned?: boolean;
   /** 这场会话在内容检索里命中了什么。没搜内容、或这场没命中时为 null。 */
   contentMatch?: ContentMatch | null;
+  /**
+   * 这一行是挂在别人下面的 worker。
+   *
+   * 区分**不靠颜色**：颜色在这张清单里只有两个用处——在跑是绿、出错是红，多一种就把
+   * 那两档淹了。从属关系靠三样一起说：缩进（位置本身）、行首那个折角、标题降一档字色。
+   */
+  nested?: boolean;
+  /** 这场派出去过几个 worker。0 就不长展开按钮。 */
+  workerCount?: number;
+  workersExpanded?: boolean;
   onSelect: (id: string) => void;
   onCopy: (session: WorkbenchSession) => void;
   /** 置顶开关。不给就不长这颗按钮——骨架屏与只读场景用得上。 */
   onTogglePin?: (session: WorkbenchSession) => void;
+  /** 展开/折起这场派出去的 worker。不给就不长这颗按钮。 */
+  onToggleWorkers?: (session: WorkbenchSession) => void;
 }) {
   const { t } = useTranslation();
   const { familyLabel } = useWorkbenchLabels();
   const dirTail = session.directory.split('/').filter(Boolean).slice(-2).join('/');
   const cmd = resumeCommand(session);
+  const hasWorkers = workerCount > 0 && Boolean(onToggleWorkers);
+  /** 折着的时候才叠纸——展开之后那一叠已经摊在下面了，再画一叠是重复说一遍。 */
+  const stacked = hasWorkers && !workersExpanded;
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={() => onSelect(session.session_id)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onSelect(session.session_id);
-        }
-      }}
-      aria-current={selected ? 'true' : undefined}
-      data-testid="session-item"
-      data-status={session.status}
-      data-pinned={pinned ? 'true' : undefined}
-      /* **不再是一张卡。** 从前每一场会话都有自己的边框与卡底，一屏摆下五六张，人看到
-         的先是五六个方框，然后才是里面的字。清单要的是一列可扫读的行：平时没有任何容器，
-         鼠标经过才浮出一层底，选中的那一场换成品牌绿淡底——整行换底，不靠任何单边色条。
-         绿环去掉了：淡底加标题转绿已经足够把它从一列灰字里分出来，再加一圈亮绿只是喊。 */
-      className={`group/session w-full cursor-pointer rounded-[8px] px-2.5 py-2 text-left transition-colors duration-200 ${
-        selected ? ACCENT_BG : 'hover:bg-bg-hover'
-      }`}
-    >
-      <div className="flex items-start gap-2">
+    /* 叠纸画在这一层：两张纸片是绝对定位的兄弟节点，排在卡片**前面**，于是被卡片盖住，
+       只露出下缘与两侧收进去的那一点。层数固定三层，不随实际条数变——数量由展开后
+       列出来的那几行回答，让纸片去数数只会让一叠纸在 2 个和 9 个之间抖动。
+       折着时底下多留一点空，否则最下面那张纸会贴到下一行头上。 */
+    <div className={`relative ${stacked ? 'mb-3' : ''}`}>
+      {stacked ? (
+        <>
+          {/* 每张纸都要有自己的一道边，否则两张纸的下缘挨在一起，看起来是文字底下浮了
+              两道杠。边用的是清单里到处在用的那个分隔线色，不新增颜色。 */}
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-4 top-4 -bottom-[10px] rounded-[8px] border border-border-color bg-bg-secondary"
+          />
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-2 top-3 -bottom-[5px] rounded-[8px] border border-border-color bg-bg-secondary"
+          />
+        </>
+      ) : null}
+      {/* 卡片背后垫一层不透明的底，否则身后那两张纸会透过卡片自己的半透明底色显出来。
+          填的是侧栏自己的底色：看起来仍是一张干净的纸，只是把身后那两张挡住了。
+          垫在这里而不是画在卡片上，是为了让卡片那一层继续只管自己的状态——选中换底、
+          鼠标经过浮底，两样都还长在同一个地方。 */}
+      {stacked ? (
         <span
-          className={`line-clamp-2 min-w-0 flex-1 text-[13px] font-medium leading-[1.5] ${
-            selected ? ACCENT_TEXT : 'text-text-primary'
-          }`}
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 rounded-[8px] border border-border-color bg-bg-secondary"
+        />
+      ) : null}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => onSelect(session.session_id)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSelect(session.session_id);
+          }
+        }}
+        aria-current={selected ? 'true' : undefined}
+        data-testid="session-item"
+        data-status={session.status}
+        data-pinned={pinned ? 'true' : undefined}
+        data-origin={session.origin}
+        data-nested={nested ? 'true' : undefined}
+        data-stacked={stacked ? 'true' : undefined}
+        /* **平时不是一张卡。** 从前每一场会话都有自己的边框与卡底，一屏摆下五六张，人看到
+           的先是五六个方框，然后才是里面的字。清单要的是一列可扫读的行：平时没有任何容器，
+           鼠标经过才浮出一层底，选中的那一场换成品牌绿淡底——整行换底，不靠任何单边色条。
+           绿环去掉了：淡底加标题转绿已经足够把它从一列灰字里分出来，再加一圈亮绿只是喊。
+           **底下压着 worker 的那几场是例外**：它们要有一张实在的纸，身后那一叠才立得住。
+           容器在这里不是装饰，它就是"这下面还有东西"这句话本身。 */
+        className={`group/session relative w-full cursor-pointer rounded-[8px] px-2.5 py-2 text-left transition-colors duration-200 ${
+          selected ? ACCENT_BG : 'hover:bg-bg-hover'
+        }`}
+      >
+      <div className="flex items-start gap-2">
+        {/* 展开钮在标题**前面**，不在下面那行里。从前它挤在目录与复制按钮中间，跟旁边
+            两颗图标一样大小、一样灰，读出来是"又一个图标"而不是"这里能展开"，还把目录
+            挤短了一截。挪到行首之后它自成一列，与缩进对齐，一眼就知道是层级。 */}
+        {hasWorkers ? (
+          <button
+            type="button"
+            aria-expanded={workersExpanded}
+            aria-label={
+              workersExpanded
+                ? t('workbench.rail.collapseWorkers')
+                : t('workbench.rail.expandWorkers', { n: workerCount })
+            }
+            title={t('workbench.rail.workerCount', { n: workerCount })}
+            data-testid="toggle-workers"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleWorkers?.(session);
+            }}
+            /* 给它一个真的能按的形状：20×20 的方块、有底、有圆角。没有底的时候它只是
+               一个漂在标题左边的符号，和"可以点"这件事对不上；有了底，它和旁边那两颗
+               图标的区别也立刻出来了——那两颗是悬停才浮出来的，这一颗一直在。 */
+            className="-ml-0.5 mt-[1px] flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] bg-bg-hover text-text-secondary transition-colors duration-200 hover:bg-bg-active hover:text-text-primary"
+          >
+            <DisclosureTriangle expanded={workersExpanded} />
+          </button>
+        ) : null}
+        {/* 折角只在从属行上出现，且不可点——它说的是"这一行属于上面那一行"，
+            不是"点我会发生什么"。 */}
+        {nested ? (
+          <CornerDownRight
+            size={11}
+            className="mt-[3px] shrink-0 text-text-dim"
+            aria-hidden="true"
+          />
+        ) : null}
+        <span
+          className={`line-clamp-2 min-w-0 flex-1 font-medium leading-[1.5] ${
+            nested ? 'text-[12px]' : 'text-[13px]'
+          } ${selected ? ACCENT_TEXT : nested ? 'text-text-secondary' : 'text-text-primary'}`}
         >
           {session.title}
         </span>
@@ -271,6 +388,7 @@ export default function SessionItem({
           {session.digest_stuck}
         </p>
       ) : null}
+      </div>
     </div>
   );
 }

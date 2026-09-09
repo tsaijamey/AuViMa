@@ -223,6 +223,18 @@ def drive_start(agent_type: str, name: str | None, use_profile: str | None) -> N
             cwd=cwd,
         )
     )
+    # 记一笔这场常驻会话是谁派出去的，左栏据此把它折到派活的那一场下面。与一次性那条路
+    # 共用同一本账（见 frago.session.session_origin）；记账失败不影响会话已经起好这件事。
+    from frago.cli.agent_command import _record_worker_launch
+
+    _record_worker_launch(
+        sid=resolved,
+        agent_type=agent_type,
+        cwd=cwd,
+        prompt_text="",
+        native_session_id=False,
+    )
+
     # 进程退出后 tmux 会话保活（不 shutdown pool）。
     click.echo(resolved)
 

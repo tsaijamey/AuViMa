@@ -21,13 +21,13 @@ def eval_conv_transcript(svc: Any, conv_key: str) -> Any | None:  # noqa: ARG001
     定位走 ``locate_transcript(uuid5(conv_key), cwd=$HOME)``——与 claude driver
     的 completion_probe 同一套派生，路径在起会话那刻就锁定。
     """
-    from frago.agent_driver.drivers.claude import _claude_session_uuid
+    from frago.agent_driver.drivers.claude import claude_session_uuid
     from frago.session.transcript_completion import (
         evaluate_file,
         locate_transcript,
     )
 
-    sid = _claude_session_uuid(conv_key)
+    sid = claude_session_uuid(conv_key)
     path = locate_transcript(sid, cwd=str(Path.home()))
     if path is None:
         return None
@@ -45,13 +45,13 @@ def watch_poll(
     """
     import os as _os
 
-    from frago.agent_driver.drivers.claude import _claude_session_uuid
+    from frago.agent_driver.drivers.claude import claude_session_uuid
     from frago.session.transcript_completion import (
         evaluate_file,
         locate_transcript,
     )
 
-    sid = _claude_session_uuid(conv_key)
+    sid = claude_session_uuid(conv_key)
     path = locate_transcript(sid, cwd=str(Path.home()))
     if path is None:
         return None, None

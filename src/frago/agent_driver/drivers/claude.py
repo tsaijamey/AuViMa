@@ -40,8 +40,24 @@ logger = logging.getLogger(__name__)
 _CLAUDE_SID_NS = uuid.UUID("6f4d2c1a-0b3e-4a5d-8c7b-9e0f1a2b3c4d")
 
 
-def _claude_session_uuid(frago_session_id: str) -> str:
+def claude_session_uuid(frago_session_id: str) -> str:
+    """frago 那一侧的编号 → claude 那一侧的会话编号。派生规则只有这一处。
+
+    公开是因为 driver 之外也要问同一个问题：起 worker 时要把"这场会话在 claude 那边叫
+    什么"记进账本，界面才认得出它是谁派出去的（见 ``frago.session.session_origin``）。
+    抄第二份的话，哪天命名空间一改，界面上的父子关系会安静地全部对不上。
+    """
     return str(uuid.uuid5(_CLAUDE_SID_NS, frago_session_id))
+
+
+def session_id_for(session_id: str, *, native: bool) -> str:
+    """这场会话在 claude 那边的真实编号。
+
+    ``native=True`` 是"编号本来就是 claude 的"（``--resume`` 续接、页面新建时先 mint 好的
+    那个），原样用；否则是 frago 自己的编号，要派生一次。``_launch`` 与
+    ``transcript_path_for`` 的二分与这里同源。
+    """
+    return session_id if native else claude_session_uuid(session_id)
 
 
 # claude TUI 底部输入框提示符行。当前 claude 用 ``❯``，旧版本用 ``>``，两者都认。
@@ -281,7 +297,7 @@ def _launch(ctx: LaunchCtx) -> str:
     # 此情形——故按该 sid 的 transcript 是否已存在二分：存在 → ``--resume`` 续接，
     # 不存在 → ``--session-id`` 首次创建。定位核心已下沉 session/，agent_driver→session
     # 是合法正向依赖，故顶层 eager 导入（消环后还原，不再需要延迟）。
-    sid = _claude_session_uuid(ctx.session_id)
+    sid = claude_session_uuid(ctx.session_id)
     if tc_mod.locate_transcript(sid, cwd=ctx.cwd) is not None:
         return f"claude --dangerously-skip-permissions --resume {sid}"
     return f"claude --dangerously-skip-permissions --session-id {sid}"
@@ -293,11 +309,7 @@ def transcript_path_for(session: TmuxAgentSession) -> Path | None:
     与 ``_launch`` 同一套规则：native 会话原样用真实 id 定位，否则按 uuid5 派生。
     解析核心已在 session/，顶层 eager 导入。
     """
-    sid = (
-        session.session_id
-        if session.native_session_id
-        else _claude_session_uuid(session.session_id)
-    )
+    sid = session_id_for(session.session_id, native=session.native_session_id)
     return tc_mod.locate_transcript(sid, cwd=session.cwd)
 
 

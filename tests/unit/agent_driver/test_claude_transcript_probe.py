@@ -172,7 +172,7 @@ def test_claude_probe_reads_transcript(tmp_path, monkeypatch):
     monkeypatch.setattr(tc, "CLAUDE_PROJECTS_DIR", tmp_path)
 
     cwd = "/Users/frago/Repos/frago"
-    sid = claude_driver._claude_session_uuid("frago-sess-1")
+    sid = claude_driver.claude_session_uuid("frago-sess-1")
     # transcript lives at <projects_root>/<encode(cwd)>/<sid>.jsonl
     from frago.session.monitor import encode_project_path
 
@@ -220,7 +220,7 @@ def test_claude_launch_injects_session_id(tmp_path, monkeypatch):
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
 
     cmd = claude_driver._launch(LaunchCtx(cwd="/tmp", session_id="abc"))
-    sid = claude_driver._claude_session_uuid("abc")
+    sid = claude_driver.claude_session_uuid("abc")
     assert "--dangerously-skip-permissions" in cmd
     assert f"--session-id {sid}" in cmd
     # deterministic + valid uuid

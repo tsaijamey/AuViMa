@@ -33,6 +33,15 @@ export type SessionFamily = 'claude-code' | 'opencode' | 'codex';
  */
 export type SessionStatus = 'running' | 'error' | 'done' | 'idle';
 
+/**
+ * 这场会话是谁开的：人自己开的，还是 frago 派出去干活的 worker。
+ *
+ * 判定全在服务端做完（见 `frago.session.session_origin`），界面一个字都不重判。
+ * 判不出来的一律是 `human`——把一场人自己谈了半天的会话折进 worker 堆里，比多显示
+ * 几场 worker 糟得多。
+ */
+export type SessionOrigin = 'human' | 'worker';
+
 /** 左栏一行 = 一场会话。字段与 `record_reader.SessionCard` 逐字对齐。 */
 export interface WorkbenchSession {
   session_id: string;
@@ -56,6 +65,15 @@ export interface WorkbenchSession {
   digest_done: string | null;
   /** 当前阻塞点。只有状态为报错时才有值。 */
   digest_stuck: string | null;
+  /** 人自己开的，还是 frago 派出去的 worker。 */
+  origin: SessionOrigin;
+  /**
+   * 派活的那场会话。只有认得出来的 worker 才有值。
+   *
+   * 左栏据此把 worker 折到派活的那一场下面。认不出父亲的 worker 仍是 worker，只是
+   * 没地方可挂，另有一处收它们（见 `SessionRail`）。
+   */
+  parent_session_id: string | null;
 }
 
 /**

@@ -87,14 +87,14 @@ async def list_pa_sessions() -> dict:
     """List PA's resident conversations (``primary_agent.warm_convs``, most recent first).
 
     Each entry's ``sid`` is the same uuid5-derived claude session id the resident
-    tmux session and transcript watcher already key off of (``_claude_session_uuid``),
+    tmux session and transcript watcher already key off of (``claude_session_uuid``),
     so it lines up 1:1 with ``/api/claude-sessions/{sid}`` and ``claude --resume``.
     ``group_name`` prefers the channel's cached reply_context (freshest, but
     empty until this conv gets a message after a server restart), then falls
     back to reading the last ``<group_name>`` the bootstrap ever embedded in
     this conv's own transcript (survives restarts), then the raw conv native id.
     """
-    from frago.agent_driver.drivers.claude import _claude_session_uuid
+    from frago.agent_driver.drivers.claude import claude_session_uuid
     from frago.server.services.primary.lifecycle import load_warm_convs
     from frago.server.services.primary_agent_service import CONFIG_FILE, PrimaryAgentService
 
@@ -102,7 +102,7 @@ async def list_pa_sessions() -> dict:
     sessions = []
     for conv_key in load_warm_convs(CONFIG_FILE):
         channel, _, native_id = conv_key.partition(":")
-        sid = _claude_session_uuid(conv_key)
+        sid = claude_session_uuid(conv_key)
         reply_ctx = pa._reply_context_cache.get(f"conv:{conv_key}") or {}
         group_name = (
             reply_ctx.get("chat_name")
@@ -145,10 +145,10 @@ async def send_pa_session_message(request: PaSendRequest) -> dict:
     if pa._queue_consumer_task is None or pa._queue_consumer_task.done():
         raise HTTPException(503, "PA is not running")
 
-    from frago.agent_driver.drivers.claude import _claude_session_uuid
+    from frago.agent_driver.drivers.claude import claude_session_uuid
 
     # 图像落盘键用 conv 对应的 claude sid，和该 conv 的常驻会话、transcript 对齐。
-    sid = _claude_session_uuid(request.conv_key)
+    sid = claude_session_uuid(request.conv_key)
     try:
         image_paths = save_uploaded_images(request.images, sid)
     except ImageUploadError as e:
