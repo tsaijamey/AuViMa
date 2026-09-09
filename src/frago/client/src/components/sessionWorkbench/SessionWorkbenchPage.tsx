@@ -24,6 +24,7 @@ import RecordStream from './RecordStream';
 import ReportPanel from './ReportPanel';
 import Composer from './Composer';
 import SessionLaunchPanel from './SessionLaunchPanel';
+import StopRunButton from './StopRunButton';
 import { useWorkbenchSessions } from '@/hooks/useWorkbenchSessions';
 import { useWorkbenchRecords } from '@/hooks/useWorkbenchRecords';
 import { useSessionLaunch } from '@/hooks/useSessionLaunch';
@@ -121,6 +122,15 @@ export default function SessionWorkbenchPage() {
           )}
           {/* 用量月历的入口搬去了左栏底部：那里是「我还剩多少」的位置，与额度条并排。
               它本来就不是会话页专属的东西，挂在这一页的标题栏上只是它当初落脚的地方。 */}
+          {/* 这一行的最右留给「结束运行」：人认为这一场谈完了，按它把 tmux 里那具还占着
+              几百兆的壳收掉。会话本身不动——记录还在，还能翻。没选会话时它不出现，
+              那时候没有「这一场」可结束。 */}
+          {selected ? (
+            <StopRunButton
+              sessionId={selected.session_id}
+              onStopped={() => void sessions.reload()}
+            />
+          ) : null}
         </header>
 
         <div className="min-h-0 flex-1">

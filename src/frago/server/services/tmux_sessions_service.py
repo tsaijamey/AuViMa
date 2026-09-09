@@ -120,7 +120,7 @@ def _resolve_session_id(label: str, pane: str) -> str | None:
     try:
         from frago.agent_driver.drivers import claude as claude_driver
 
-        candidates.append(claude_driver._claude_session_uuid(label))
+        candidates.append(claude_driver.claude_session_uuid(label))
     except Exception:  # noqa: BLE001 — 派生规则取不到只是少一个候选
         pass
 
@@ -395,6 +395,74 @@ def close_sessions(names: list[str]) -> list[dict]:
     return results
 
 
+@dataclass
+class TmuxSessionLink:
+    """一个会话编号与它此刻那具 tmux 之间的对应。"""
+
+    name: str  # tmux 会话名（关闭时点的就是它）
+    label: str  # 去掉前缀后的那截
+    busy: bool  # 屏上还在干活——关之前必须先问一句
+    managed: bool  # 工作台那个池子管着它，关闭要走池的驱逐
+    memory_mb: int
+
+
+def find_for_session(session_id: str) -> TmuxSessionLink | None:
+    """这个会话编号此刻有没有一具活着的 tmux；没有返回 None。
+
+    ``list_sessions`` 是从 tmux 往回认会话（本机有哪几场、各是谁）。会话页要问的是
+    反方向的那一句：我手上这个编号，此刻有没有一具活着的 tmux。方向反过来，判据不变
+    ——认编号仍走 ``_resolve_session_id``，忙不忙仍走 ``_is_busy``。
+
+    **NEVER 拿会话卡片上那个「在跑」当判据。** 那一档是从记录文件推的：一场昨天的
+    会话，记录停在昨天而 tmux 早就没了；反过来也有 tmux 活着、记录看着已终结的。
+    界面上要不要给人「结束运行」这个按钮，只有 tmux 本人说了算。
+
+    **一份记录都不读。** 这条问路挂在「打开一场会话」上，人每点一行就要走一次；
+    浮窗那条路每行都要把一份 jsonl 整个读完，那是人点开浮窗才做的重活。
+
+    先按名字直接对：工作台自己开的会话，tmux 名字里那截就是编号，一次比较就够。
+    对不上才逐个读屏——飞书群、语音、命令行起的那些，名字是业务把手，编号只在屏上。
+    """
+    sid = (session_id or "").strip()
+    if not sid:
+        return None
+
+    names = _session_names()
+    if not names:
+        return None
+
+    from frago.agent_driver.tmux_session import tmux_name_for
+
+    hit: str | None = None
+    pane = ""
+
+    expected = tmux_name_for(sid)
+    if expected in names:
+        hit = expected
+        pane = _tmux("capture-pane", "-p", "-t", expected)
+    else:
+        for name in names:
+            if not name.startswith(_PREFIX):
+                continue
+            candidate = _tmux("capture-pane", "-p", "-t", name)
+            if _resolve_session_id(name[len(_PREFIX) :], candidate) == sid:
+                hit, pane = name, candidate
+                break
+
+    if hit is None:
+        return None
+
+    pids = _pane_pids().get(hit, ())
+    mem = _memory_mb() if pids else {}
+    return TmuxSessionLink(
+        name=hit,
+        label=hit[len(_PREFIX) :] if hit.startswith(_PREFIX) else hit,
+        busy=_is_busy(pane),
+        managed=sid in _managed_ids(),
+        memory_mb=sum(mem.get(p, 0) for p in pids),
+    )
+
+
 def as_dicts(rows: list[TmuxSessionInfo]) -> list[dict]:
     return [asdict(r) for r in rows]
 
@@ -402,7 +470,9 @@ def as_dicts(rows: list[TmuxSessionInfo]) -> list[dict]:
 __all__ = [
     "DEFAULT_EXCERPT_CHARS",
     "TmuxSessionInfo",
+    "TmuxSessionLink",
     "as_dicts",
     "close_sessions",
+    "find_for_session",
     "list_sessions",
 ]

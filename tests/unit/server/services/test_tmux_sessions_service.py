@@ -146,3 +146,61 @@ class TestClose:
 
         assert results[0] == {"name": "frago-agent-pooled", "ok": True, "via": "pool", "error": None}
         sub.run.assert_not_called()
+
+
+class TestFindForSession:
+    """按会话编号反着找它那具 tmux——「结束运行」那个按钮按下去走的第一步。
+
+    这一步错了有两种后果：找错人（关掉别人的会话）或者找不到人（人按了没反应，
+    而那具壳还占着几百兆）。
+    """
+
+    SID = "9f1c2b3a-1111-2222-3333-444455556666"
+
+    def _find(self, names, *, resolve=None):
+        with (
+            patch.object(svc, "_session_names", return_value=names),
+            patch.object(svc, "_tmux", return_value="pane text"),
+            patch.object(svc, "_pane_pids", return_value={f"frago-agent-{self.SID}": [1]}),
+            patch.object(svc, "_memory_mb", return_value={1: 320}),
+            patch.object(svc, "_managed_ids", return_value=set()),
+            patch.object(svc, "_is_busy", return_value=False),
+            patch.object(svc, "_resolve_session_id", side_effect=resolve or (lambda label, pane: None)),
+        ):
+            return svc.find_for_session(self.SID)
+
+    def test_a_workbench_session_is_matched_by_name_without_reading_any_pane(self):
+        # 工作台自己开的会话，tmux 名字里那截就是编号，一次字符串比较就够——不必为了
+        # 认它去逐个读屏。
+        called = []
+
+        def resolve(label, pane):
+            called.append(label)
+            return None
+
+        link = self._find(
+            [f"frago-agent-{self.SID}", "frago-agent-feishu_oc_abc"], resolve=resolve
+        )
+
+        assert link is not None
+        assert link.name == f"frago-agent-{self.SID}"
+        assert link.memory_mb == 320
+        assert called == []
+
+    def test_a_session_whose_name_is_a_business_handle_is_matched_by_reading_the_pane(self):
+        # 飞书群、语音、命令行起的那些，名字是业务把手，编号只在屏上自报的那行里。
+        link = self._find(
+            ["frago-agent-feishu_oc_abc"],
+            resolve=lambda label, pane: self.SID if label == "feishu_oc_abc" else None,
+        )
+
+        assert link is not None
+        assert link.name == "frago-agent-feishu_oc_abc"
+        assert link.label == "feishu_oc_abc"
+
+    def test_no_live_session_returns_nothing_at_all(self):
+        # 找不到就是找不到。编一个名字回去，下一步会照着它去关，关掉的是别人。
+        assert self._find(["frago-agent-someone-else"]) is None
+
+    def test_no_tmux_at_all_returns_nothing(self):
+        assert self._find([]) is None

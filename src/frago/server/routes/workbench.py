@@ -361,6 +361,78 @@ async def send_to_session(sid: str, request: SendRequest) -> dict:
     }
 
 
+class StopRunRequest(BaseModel):
+    """``POST /workbench/sessions/{sid}/stop`` 的请求体。
+
+    ``force`` 是人第二次按下去时才带的：第一次按下若发现屏上还在干活，服务端不动它，
+    把「还在干活」如实回给页面，由人自己决定要不要打断。
+    """
+
+    force: bool = False
+
+
+@router.post("/workbench/sessions/{sid}/stop")
+async def stop_session_run(sid: str, request: StopRunRequest) -> dict[str, Any]:
+    """结束这一场会话此刻在 tmux 里的运行。
+
+    **按下去才去找那具 tmux，页面不预先探测。** 打开一场会话是个高频动作，为了让按钮
+    亮或灭而每次都去问一趟 tmux，代价摊在每一次点击上；而这个按钮一天按不了几次。
+    代价是按钮恒亮，按下去才知道有没有关到——那句话由返回值如实说出来。
+
+    **NEVER 拿会话卡片上那个「在跑」当判据。** 那一档是从记录文件推的，与 tmux 里
+    有没有一具活着的会话是两回事：一场昨天的会话记录停在昨天而 tmux 早没了，反过来
+    也有 tmux 活着、记录看着已终结的。
+
+    关闭本身一个字都不新写，走的是清点浮窗那条既有的路：池子管着的交给池子驱逐
+    （池的内存状态得跟着变，否则页面下次投喂会拿着一个死掉的把手去 send），池外的
+    才落到单场 ``kill-session``。**NEVER kill-server。**
+
+    三种结局，页面各说各的话：
+
+    - ``alive`` 为假——这一场此刻没有在跑的会话，什么都没动；
+    - ``alive`` 为真而 ``stopped`` 为假且 ``busy`` 为真——屏上还在干活，没动它，
+      等人带 ``force`` 再按一次；
+    - ``stopped`` 为真——关掉了，``via`` 说明走的是池的驱逐还是 tmux。
+    """
+    from frago.server.services import tmux_sessions_service as svc
+
+    def _stop() -> dict[str, Any]:
+        link = svc.find_for_session(sid)
+        if link is None:
+            return {
+                "sid": sid,
+                "alive": False,
+                "busy": False,
+                "stopped": False,
+                "name": None,
+                "via": None,
+                "error": None,
+            }
+        if link.busy and not request.force:
+            return {
+                "sid": sid,
+                "alive": True,
+                "busy": True,
+                "stopped": False,
+                "name": link.name,
+                "via": None,
+                "error": None,
+            }
+        result = svc.close_sessions([link.name])[0]
+        return {
+            "sid": sid,
+            "alive": True,
+            "busy": link.busy,
+            "stopped": bool(result["ok"]),
+            "name": link.name,
+            "via": result["via"],
+            "error": result["error"],
+        }
+
+    # 找会话要跑 tmux、读屏，关闭要跑 ps 与 kill，整趟都是阻塞 IO。
+    return await asyncio.to_thread(_stop)
+
+
 @router.get("/workbench/records/{rid}/raw")
 async def read_workbench_record_raw(
     rid: str,
