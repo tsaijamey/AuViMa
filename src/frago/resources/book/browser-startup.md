@@ -12,7 +12,7 @@ frago browser detect    # 只列系统已装的浏览器及路径（带 --group 
 
 start 自动完成：选浏览器 → 拉起 native messaging daemon → 写 manifest → 加载 frago 扩展启动浏览器 → 等待桥握手。
 
-**Edge 是 frago 的默认浏览器**，两个后端都一样。选浏览器的顺序固定：Edge Stable → Edge Beta → Edge Dev → Chromium → Chrome Beta → Chrome Dev → Chrome Canary → Brave → Vivaldi，取第一个装了的。Chrome Stable 排在最后且被扩展后端排除：v137 起它静默忽略 `--load-extension`，而且它通常是用户自己天天在用的那个浏览器，agent 不该默认闯进去。`-b cdp` 的顺序同理：Edge → Chromium → Chrome。
+**Chrome for Testing 是 frago 的默认浏览器**，它由 frago 自己下载、放在 `~/.frago/tools/chrome-for-testing/`，所有机器上都是这个位置。它排第一是因为它永远不是用户日常在用的那个浏览器，也不带厂商的登录与自动更新服务。选浏览器的顺序固定：Chrome for Testing → Edge Stable → Edge Beta → Edge Dev → Chromium → Chrome Beta → Chrome Dev → Chrome Canary → Brave → Vivaldi，取第一个可用的；CfT 之后的都是用户自己装的浏览器，只在 frago 没有自己那份 CfT 时才轮到。Chrome Stable 排在最后且被扩展后端排除：v137 起它静默忽略 `--load-extension`，而且它通常是用户自己天天在用的那个浏览器，agent 不该默认闯进去。`-b cdp` 的顺序同理：Edge → Chromium → Chrome。
 
 **不要传 `--browser`——这条只针对默认的 extension 后端。** 那边它换不了浏览器：启动的仍是自动挑中的那个，它只把 profile 目录改成你写的品牌的目录，等于拿 A 浏览器去开 B 浏览器的数据目录。而且它只认 `chrome` / `edge` / `chromium` 三个值，其余（brave、vivaldi 等）会被直接拒；其中 `chrome` 尤其危险——那是用户日常浏览器的数据目录。
 
@@ -20,7 +20,7 @@ start 自动完成：选浏览器 → 拉起 native messaging daemon → 写 man
 
 ## Profile
 
-使用所选浏览器**自己的默认 profile**，不拷贝、不隔离。用户在该浏览器里手动登录、存的密码，agent 立即可见。该浏览器专给 agent 用，日常浏览器是另一个品牌，互不干扰。
+除 Chrome for Testing 外，使用所选浏览器**自己的默认 profile**，不拷贝、不隔离。CfT 是例外：它不是装出来的，没有厂商认定的 profile 位置，所以 profile 也归 frago，落在 `~/.frago/profiles/cft/extension/`。用户在该浏览器里手动登录、存的密码，agent 立即可见。该浏览器专给 agent 用，日常浏览器是另一个品牌，互不干扰。
 
 同一 profile 同时只能有一个浏览器实例：start 撞锁会报错，先 `frago browser stop` 或手动关窗口。
 

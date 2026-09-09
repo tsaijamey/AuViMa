@@ -504,10 +504,12 @@ def check_browsers():
     # ── Browser catalogue ───────────────────────────────────────────
     _CHROME_STABLE_PATH = _CHROME_BETA_PATH = _CHROME_DEV_PATH = ""
     _CHROME_CANARY_PATH = _EDGE_PATH = _EDGE_BETA_PATH = _EDGE_DEV_PATH = ""
-    _CHROMIUM_PATH = _BRAVE_PATH = _VIVALDI_PATH = ""
+    _CHROMIUM_PATH = _BRAVE_PATH = _VIVALDI_PATH = _CFT_PATH = ""
 
     for bc in ext_list:
-        if bc.brand == "chrome-beta":
+        if bc.brand == "cft":
+            _CFT_PATH = bc.path
+        elif bc.brand == "chrome-beta":
             _CHROME_BETA_PATH = bc.path
         elif bc.brand == "chrome-dev":
             _CHROME_DEV_PATH = bc.path
@@ -568,6 +570,7 @@ def check_browsers():
         })
 
     # Format: (display_name, path, ext_ok, cdp_ok, proc_names)
+    _add("Chrome for Testing", _CFT_PATH,        True,  True,  ["Google Chrome for Testing", "chrome.exe"])
     _add("Chrome",          _CHROME_STABLE_PATH, False, True,  ["Google Chrome", "chrome.exe"])
     _add("Chrome Beta",     _CHROME_BETA_PATH,   True,  True,  ["Google Chrome Beta", "chrome.exe"])
     _add("Chrome Dev",      _CHROME_DEV_PATH,    True,  True,  ["Google Chrome Dev", "chrome.exe"])

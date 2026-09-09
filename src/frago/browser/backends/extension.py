@@ -451,8 +451,64 @@ def _coerce_tab_id(tab_id: Any) -> Any:
 
 class BrowserChoice(NamedTuple):
     path: str   # absolute binary path
-    brand: str  # "edge" | "edge-beta" | "edge-dev" | "chromium" | "chrome-beta"
-                # | "chrome-dev" | "chrome-canary" | "brave" | "vivaldi"
+    brand: str  # "cft" | "edge" | "edge-beta" | "edge-dev" | "chromium"
+                # | "chrome-beta" | "chrome-dev" | "chrome-canary"
+                # | "brave" | "vivaldi"
+
+
+# ── Chrome for Testing (frago's own) ────────────────────────────────
+#
+# Every browser below this block is one the *user* installed, so frago
+# looks for it where that vendor's installer puts it — hence the literal
+# absolute paths. Chrome for Testing is the opposite: frago downloads it
+# itself, so frago decides where it lives, and that location must be the
+# same on every machine. It is therefore derived from the frago home
+# directory and never hardcoded.
+#
+# Google publishes one archive per platform/arch and each unpacks to its
+# own top-level directory, so the path *below* the root unavoidably
+# differs per platform. The root is the cross-platform invariant.
+
+CFT_DIR_NAME = "chrome-for-testing"
+
+_CFT_RELATIVE_BINARIES: dict[str, tuple[str, ...]] = {
+    "Darwin": (
+        "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/"
+        "Google Chrome for Testing",
+        "chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/"
+        "Google Chrome for Testing",
+    ),
+    "Linux": (
+        "chrome-linux64/chrome",
+        "chrome-linux-arm64/chrome",
+    ),
+    "Windows": (
+        r"chrome-win64\chrome.exe",
+        r"chrome-win32\chrome.exe",
+    ),
+}
+
+
+def cft_root() -> Path:
+    """Where frago keeps its own Chrome for Testing download.
+
+    Identical on every user's machine: ``~/.frago/tools/chrome-for-testing``.
+    ``~/.frago/tools`` is already the home for large third-party payloads
+    frago fetches rather than ships, and is git-ignored there.
+    """
+    return Path.home() / ".frago" / "tools" / CFT_DIR_NAME
+
+
+def cft_binary() -> Path | None:
+    """Resolve the Chrome for Testing executable, or None if not fetched."""
+    root = cft_root()
+    if not root.exists():
+        return None
+    for rel in _CFT_RELATIVE_BINARIES.get(_platform.system(), ()):
+        candidate = root / rel
+        if candidate.exists():
+            return candidate
+    return None
 
 
 _BROWSER_CANDIDATES_LINUX: list[tuple[str, str]] = [
@@ -537,6 +593,29 @@ def _windows_user_paths() -> list[tuple[str, str]]:
     ]
 
 
+def _extension_candidates() -> list[tuple[str, str]]:
+    """Candidate ``(path, brand)`` pairs in picker priority order.
+
+    Chrome for Testing comes first when frago has fetched it: it is the
+    browser frago owns, so it is never the user's daily browser, it
+    carries no vendor sign-in or update service, and its version is
+    pinned. Everything after it is a browser the user installed, tried
+    only when frago has no CfT of its own.
+    """
+    system = _platform.system()
+    if system == "Linux":
+        base = _BROWSER_CANDIDATES_LINUX
+    elif system == "Darwin":
+        base = _BROWSER_CANDIDATES_MACOS
+    elif system == "Windows":
+        base = _BROWSER_CANDIDATES_WINDOWS + _windows_user_paths()
+    else:
+        base = []
+
+    cft = cft_binary()
+    return ([(str(cft), "cft")] if cft else []) + list(base)
+
+
 def pick_browser_for_extension() -> BrowserChoice | None:
     """Find the highest-priority Chromium-class browser usable for extension mode.
 
@@ -546,17 +625,7 @@ def pick_browser_for_extension() -> BrowserChoice | None:
     since v137. Callers that pass ``chrome_binary=`` explicitly bypass
     this picker and may get Chrome Stable, but it will fail at runtime.
     """
-    system = _platform.system()
-    if system == "Linux":
-        candidates = _BROWSER_CANDIDATES_LINUX
-    elif system == "Darwin":
-        candidates = _BROWSER_CANDIDATES_MACOS
-    elif system == "Windows":
-        candidates = _BROWSER_CANDIDATES_WINDOWS + _windows_user_paths()
-    else:
-        candidates = []
-
-    for path, brand in candidates:
+    for path, brand in _extension_candidates():
         if Path(path).exists():
             return BrowserChoice(path=path, brand=brand)
 
@@ -574,15 +643,7 @@ def list_browsers_for_extension() -> list[BrowserChoice]:
     Useful for diagnostic CLI output. Order follows the picker's priority,
     deduped by absolute path.
     """
-    system = _platform.system()
-    if system == "Linux":
-        candidates = _BROWSER_CANDIDATES_LINUX
-    elif system == "Darwin":
-        candidates = _BROWSER_CANDIDATES_MACOS
-    elif system == "Windows":
-        candidates = _BROWSER_CANDIDATES_WINDOWS + _windows_user_paths()
-    else:
-        candidates = []
+    candidates = _extension_candidates()
 
     seen: set[str] = set()
     out: list[BrowserChoice] = []
@@ -613,8 +674,16 @@ def extension_profile_dir(brand: str) -> Path:
 
     Falls back to the expected default location when the browser is
     installed but has never been run (the directory doesn't exist yet).
+
+    Chrome for Testing is the exception to "the browser's own profile":
+    it has no vendor-blessed profile location because frago, not an
+    installer, put it on disk. frago therefore owns its profile too, at
+    a path derived the same way on every machine.
     """
     import os
+
+    if brand == "cft":
+        return Path.home() / ".frago" / "profiles" / "cft" / "extension"
 
     found = system_profile_dir(brand)
     if found is not None:
@@ -654,8 +723,9 @@ def launch_chrome_with_extension(bundle_dir: Path,
         if not choice:
             raise RuntimeError(
                 "no Chromium-class browser supports --load-extension on this "
-                "system. Install Edge / Chromium / Chrome Beta+ / Brave / "
-                "Vivaldi. Chrome Stable is not usable: it silently ignores "
+                "system. Let frago fetch its own Chrome for Testing, or "
+                "install Edge / Chromium / Chrome Beta+ / Brave / Vivaldi. "
+                "Chrome Stable is not usable: it silently ignores "
                 "--load-extension since v137."
             )
         binary = choice.path
@@ -675,11 +745,33 @@ def launch_chrome_with_extension(bundle_dir: Path,
         "--no-first-run",
         "--no-default-browser-check",
         "--enable-logging=stderr",
-        # Opening a real URL on startup triggers the content script, which
-        # pings the service worker and forces it to wake up and connect to
-        # the native host. Without this, MV3 SWs may stay dormant.
-        "about:blank",
+        # Browser-level account sync must stay off. Signing into a Google
+        # account in this browser hands extension management to sync,
+        # which installs the account's own extension set and drops the
+        # bridge — it is loaded from the command line, not the store, so
+        # sync does not recognise it. What the caller then sees is only
+        # "extension not connected", with nothing linking it back to the
+        # sign-in that caused it. Signing into Google *websites* (Gmail
+        # and the rest) is unaffected; this disables only the sync of
+        # browser data into the profile.
+        "--disable-sync",
     ]
+
+    # Route through the user's proxy client when there is one. Without
+    # this the browser silently hangs for 30s on anything that needs the
+    # proxy, which reaches the caller as an unexplained timeout. Which
+    # sites actually take the proxy is the proxy client's decision, not
+    # ours — see frago.browser.proxy_detect.
+    from ..proxy_detect import detect_local_proxy, proxy_bypass_list
+    proxy = detect_local_proxy()
+    if proxy:
+        args.append(f"--proxy-server={proxy}")
+        args.append(f"--proxy-bypass-list={proxy_bypass_list()}")
+
+    # Opening a real URL on startup triggers the content script, which
+    # pings the service worker and forces it to wake up and connect to
+    # the native host. Without this, MV3 SWs may stay dormant.
+    args.append("about:blank")
     stdio = subprocess.DEVNULL
     if log_path:
         stdio = open(log_path, "wb")  # noqa: SIM115 — handed to detached Popen

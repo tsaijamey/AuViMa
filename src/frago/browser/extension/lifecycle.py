@@ -311,8 +311,9 @@ def start_extension_bridge(
         if not choice:
             raise RuntimeError(
                 "no Chromium-class browser supports --load-extension on this "
-                "system. Install Edge / Chromium / Chrome Beta+ / Brave / "
-                "Vivaldi. Chrome Stable is excluded — it silently rejects "
+                "system. Let frago fetch its own Chrome for Testing, or "
+                "install Edge / Chromium / Chrome Beta+ / Brave / Vivaldi. "
+                "Chrome Stable is excluded — it silently rejects "
                 "--load-extension since v137."
             )
         binary = choice.path

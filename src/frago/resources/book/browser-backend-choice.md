@@ -18,7 +18,7 @@ frago browser stop         # 对称拆除
 
 控制通道是浏览器扩展 + native messaging，运行在真实浏览器环境里：
 
-- **Edge 是 frago 的浏览器。** 自动挑选顺序固定，取第一个装了的：Edge Stable → Edge Beta → Edge Dev → Chromium → Chrome Beta → Chrome Dev → Chrome Canary → Brave → Vivaldi。Chrome Stable 被刻意排除——v137 起它静默忽略 `--load-extension`。`-b cdp` 那条路也是同一个优先级（Edge → Chromium → Chrome），两条路落在同一个浏览器上，agent 的登录态才只有一份。
+- **Chrome for Testing 是 frago 的浏览器**，frago 自己下载到 `~/.frago/tools/chrome-for-testing/`，profile 在 `~/.frago/profiles/cft/extension/`。自动挑选顺序固定，取第一个可用的：Chrome for Testing → Edge Stable → Edge Beta → Edge Dev → Chromium → Chrome Beta → Chrome Dev → Chrome Canary → Brave → Vivaldi。Chrome Stable 被刻意排除——v137 起它静默忽略 `--load-extension`。`-b cdp` 那条路也是同一个优先级（Edge → Chromium → Chrome），两条路落在同一个浏览器上，agent 的登录态才只有一份。
 - **直接使用所选浏览器自己的默认 profile**（如 Edge 的 `~/Library/Application Support/Microsoft Edge`），不做隔离拷贝。该浏览器是专给 agent 用的（用户日常浏览器是另一个品牌）；用户在这个浏览器里手动登录、保存的密码，agent 立即可见，反之亦然。
 - 真实浏览器环境天然过 anti-bot 检测（Cloudflare / Datadome / Akamai），`detect --group <g>` 探针可用（见 `frago book browser-anti-bot`）。
 - 同一时刻该 profile 只能有一个浏览器实例；start 撞锁会报错并提示先 stop。

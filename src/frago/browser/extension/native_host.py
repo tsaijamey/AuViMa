@@ -325,6 +325,8 @@ _MANIFEST_ROOTS_LINUX = {
     "chrome-canary": "~/.config/google-chrome-unstable",
     "brave":         "~/.config/BraveSoftware/Brave-Browser",
     "vivaldi":       "~/.config/vivaldi",
+    # frago-owned browser → frago-owned profile (see extension.cft_root)
+    "cft":           "~/.frago/profiles/cft/extension",
 }
 
 _MANIFEST_ROOTS_MACOS = {
@@ -338,6 +340,8 @@ _MANIFEST_ROOTS_MACOS = {
     "chrome-canary": "~/Library/Application Support/Google/Chrome Canary",
     "brave":         "~/Library/Application Support/BraveSoftware/Brave-Browser",
     "vivaldi":       "~/Library/Application Support/Vivaldi",
+    # frago-owned browser → frago-owned profile (see extension.cft_root)
+    "cft":           "~/.frago/profiles/cft/extension",
 }
 
 

@@ -2276,9 +2276,14 @@ def browser_start(browser: str, headless: bool, void: bool, app_mode: bool, app_
 
     \b
     It picks a browser automatically, in this fixed order, taking the
-    first one installed:
-      Edge > Edge Beta > Edge Dev > Chromium
+    first one available:
+      Chrome for Testing > Edge > Edge Beta > Edge Dev > Chromium
         > Chrome Beta > Chrome Dev > Chrome Canary > Brave > Vivaldi
+    Chrome for Testing is frago's own browser, kept at
+    ~/.frago/tools/chrome-for-testing. It wins because it is never the
+    user's daily browser and carries no vendor sign-in or update service.
+    Everything after it is a browser the user installed, used only when
+    frago has no CfT of its own.
     Chrome Stable is excluded on purpose: since v137 it silently ignores
     --load-extension. Use `frago browser check` to see what's available.
 
