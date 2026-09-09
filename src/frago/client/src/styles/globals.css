@@ -5465,3 +5465,54 @@ a:not(.btn):not(.nav-tab):not(.sidebar-github-link):hover {
   opacity: 0.45;
   cursor: default;
 }
+
+/* 输入区上沿那条线上走着的小人。素材是 Kenney「Pixel Platformer」的两帧，CC0，
+   出处与裁法见 src/assets/README.md。
+
+   走 = 两帧轮换。迈步那一帧本身画得比站立高一像素，所以颠簸是画出来的，不是叠上去的。
+   歇 = 停在站立那一帧上，往下压一点当作坐下，再让他缓慢地呼吸。 */
+.composer-walker-sprite {
+  width: 20px;
+  height: 24px;
+  background-image: url('../assets/walker.png');
+  background-size: 40px 24px;
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  /* 像素画放大必须按格子取色，浏览器默认的平滑插值会把它糊成一团。 */
+  image-rendering: pixelated;
+}
+
+@keyframes composer-walker-step {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: -40px 0;
+  }
+}
+
+.composer-walker-sprite[data-pose='walk'] {
+  animation: composer-walker-step 380ms steps(2) infinite;
+}
+
+@keyframes composer-walker-breathe {
+  0%,
+  100% {
+    transform: scaleY(0.78);
+  }
+  50% {
+    transform: scaleY(0.82);
+  }
+}
+
+.composer-walker-sprite[data-pose='rest'] {
+  transform-origin: bottom center;
+  transform: scaleY(0.78);
+  animation: composer-walker-breathe 3.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-walker-sprite {
+    animation: none;
+  }
+}

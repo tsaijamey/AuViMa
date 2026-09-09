@@ -162,6 +162,9 @@ export default function SessionWorkbenchPage() {
         <Composer
           sessionId={selectedId}
           family={selected?.family ?? null}
+          // 上沿那条线上的小人跟着这一场走：会话在跑、或者刚发出去还没等到 agent 开口，
+          // 他就在线上踱步；两样都落下他才坐下。
+          running={selected?.status === 'running' || awaitingAgent}
           onSendStart={markSent}
           onSendFailed={clearSent}
           deliveredAt={deliveredAt}

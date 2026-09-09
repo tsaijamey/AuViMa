@@ -30,7 +30,15 @@
  *    写出这一场是哪一家——发之前就知道这句话要交给谁。
  */
 
-import { useCallback, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type DragEvent,
+  type KeyboardEvent,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2, Mail, Plus, RotateCcw, SendHorizontal } from 'lucide-react';
 import { useSendToSession, MAX_ATTACHMENTS } from '@/hooks/useSendToSession';
@@ -43,6 +51,11 @@ export interface ComposerProps {
   sessionId: string | null;
   /** 这场会话是哪一家。只用来把「在跟谁说话」写进占位话，不参与可发判定。 */
   family: SessionFamily | null;
+  /**
+   * 这一场此刻在跑没有。只喂上沿那条线上的小人：在跑他踱步，说完了他坐下。
+   * 不参与可发判定——跑着的时候照样能插话。
+   */
+  running?: boolean;
   /**
    * 请求**出门那一刻**调它。发送这条接口要等整整一轮才回来（上限 180 秒），"在跑"
    * 这件事必须挂在出门那一刻，挂在回来那一刻等于整轮之内界面一动不动。交回信封编号。
@@ -77,9 +90,92 @@ export function blockReason(sessionId: string | null): string | null {
   return null;
 }
 
+/** 走多快，每秒多少像素。慢到眼角能忽略它，快到人偶尔看一眼会发现它换了地方。 */
+const WALK_SPEED = 24;
+
+/**
+ * 输入区上沿那条线上站着的一个人。
+ *
+ * agent 在跑，他就在这条线上来回踱步；这一轮说完了，他就地坐下打盹。它不表达任何
+ * 新状态——「在跑」左栏与记录流早就说过了——它只是把那条一直亮着的横线变成一件
+ * 有人气的东西。
+ *
+ * 两条实现上的约束：
+ *
+ * 1. **随机走动不能靠 CSS。** keyframes 的路线在写下的那一刻就定死了，来回都是同一段。
+ *    这里由 JS 每走完一段临时抽一个新落点、按距离算这一段走多久，位移交给 transition
+ *    去补——于是每一段的远近、快慢、朝向都不一样。
+ * 2. **停下来要停在当下站的地方。** 位移正走到一半时状态变了，直接把目标位置清零他会
+ *    瞬移回原点。所以停的那一刻先量一次他此刻在屏幕上的横坐标，把它当作坐下的位置。
+ */
+function LineWalker({ walking }: { walking: boolean }) {
+  const lane = useRef<HTMLDivElement>(null);
+  const mark = useRef<HTMLSpanElement>(null);
+  const posRef = useRef(16);
+  const [x, setX] = useState(16);
+  const [facing, setFacing] = useState(1);
+  const [seconds, setSeconds] = useState(0);
+
+  useEffect(() => {
+    if (!walking) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const step = () => {
+      const width = lane.current?.clientWidth ?? 320;
+      const target = Math.random() * Math.max(40, width - 24);
+      const distance = Math.abs(target - posRef.current);
+      const span = Math.max(0.5, distance / WALK_SPEED);
+      setFacing(target >= posRef.current ? 1 : -1);
+      posRef.current = target;
+      setSeconds(span);
+      setX(target);
+      // 走完一段站着发会儿呆再挑下一个落点，不然就成了没有停顿的机器往返。
+      timer = setTimeout(step, span * 1000 + 400 + Math.random() * 1600);
+    };
+    timer = setTimeout(step, 300);
+    return () => clearTimeout(timer);
+  }, [walking]);
+
+  useEffect(() => {
+    if (walking) return;
+    const el = mark.current;
+    const laneEl = lane.current;
+    if (!el || !laneEl) return;
+    const here = el.getBoundingClientRect().left - laneEl.getBoundingClientRect().left;
+    posRef.current = here;
+    setSeconds(0);
+    setX(here);
+  }, [walking]);
+
+  return (
+    <div
+      ref={lane}
+      aria-hidden
+      data-testid="composer-walker"
+      data-walking={walking ? 'yes' : 'no'}
+      className="pointer-events-none absolute inset-x-0 top-0 z-10 h-0 select-none"
+    >
+      <span
+        ref={mark}
+        className="absolute bottom-[-1px] leading-none will-change-transform"
+        style={{
+          transform: `translateX(${x}px)`,
+          transition: seconds ? `transform ${seconds}s linear` : 'none',
+        }}
+      >
+        {/* 朝向与姿势必须分两层：两者都是 transform，摞在同一个元素上后写的那个会把先写的
+            整条抹掉——他一坐下，朝哪边就没人管了。 */}
+        <span className="inline-block" style={{ transform: `scaleX(${facing})` }}>
+          <span className="composer-walker-sprite block" data-pose={walking ? 'walk' : 'rest'} />
+        </span>
+      </span>
+    </div>
+  );
+}
+
 export default function Composer({
   sessionId,
   family,
+  running = false,
   onSendStart,
   onSent,
   onSendFailed,
@@ -164,10 +260,12 @@ export default function Composer({
       }}
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
-      className={`shrink-0 border-t border-border-color bg-bg-primary px-5 py-3 ${
+      className={`relative shrink-0 border-t border-border-color bg-bg-primary px-5 py-3 ${
         dragging ? 'bg-bg-hover' : ''
       }`}
     >
+      <LineWalker walking={running || sending} />
+
       <div className="mx-auto flex w-full min-w-0 max-w-[760px] flex-col gap-2">
         {blocked ? (
           <p

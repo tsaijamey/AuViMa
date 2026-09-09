@@ -421,3 +421,63 @@ describe('信封：已发送与已入队列是两副面孔', () => {
     expect(screen.queryByTestId('composer-outbound')).toBeNull();
   });
 });
+
+/**
+ * 上沿那条线上的小人。
+ *
+ * 他不表达任何新状态，所以用例只钉两件事：这一场在跑他就得在走，落下来他就得坐下；
+ * 以及踱步这件事不许影响发不发得出去——跑着的时候照样能插话。
+ */
+describe('Composer 线上的小人', () => {
+  it('会话在跑他就在走，会话落下他就坐下', () => {
+    const { rerender } = render(
+      <Composer sessionId={SID} family="claude-code" running onSent={NOOP} />
+    );
+    const pose = () =>
+      screen.getByTestId('composer-walker').querySelector('[data-pose]')?.getAttribute('data-pose');
+    expect(screen.getByTestId('composer-walker').getAttribute('data-walking')).toBe('yes');
+    expect(pose()).toBe('walk');
+
+    rerender(<Composer sessionId={SID} family="claude-code" running={false} onSent={NOOP} />);
+    expect(screen.getByTestId('composer-walker').getAttribute('data-walking')).toBe('no');
+    expect(pose()).toBe('rest');
+  });
+
+  it('他在走的时候照样发得出去——踱步不是闸门', () => {
+    render(<Composer sessionId={SID} family="claude-code" running onSent={NOOP} />);
+    fireEvent.change(screen.getByTestId('composer-input'), { target: { value: '插一句' } });
+    expect((screen.getByTestId('composer-send') as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+/**
+ * 他走的是来回，不是一路往一边。
+ *
+ * 每走完一段临时抽一个新落点，落点可能在他左边也可能在右边——所以方向自己就会翻。
+ * 用例走十几段，两个方向都得出现过，且一段都不许迈出那条线的两端。
+ */
+describe('Composer 小人的走法', () => {
+  it('十几段走下来两个方向都出现过，而且没有一段迈出线外', () => {
+    vi.useFakeTimers();
+    try {
+      render(<Composer sessionId={SID} family="claude-code" running onSent={NOOP} />);
+      const mark = screen.getByTestId('composer-walker').firstElementChild as HTMLElement;
+      const readX = () => Number(/translateX\((-?[\d.]+)px\)/.exec(mark.style.transform)?.[1] ?? 0);
+
+      const track: number[] = [readX()];
+      for (let i = 0; i < 16; i += 1) {
+        act(() => {
+          vi.advanceTimersByTime(4000);
+        });
+        track.push(readX());
+      }
+
+      const moves = track.slice(1).map((x, i) => x - track[i]);
+      expect(moves.some((d) => d > 0)).toBe(true);
+      expect(moves.some((d) => d < 0)).toBe(true);
+      expect(track.every((x) => x >= 0)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
