@@ -12,6 +12,9 @@ from frago.server.models import (
     CleanupThresholdRequest,
     CloseTmuxSessionsRequest,
     CloseTmuxSessionsResponse,
+    EnvironmentResponse,
+    EnvironmentUpgradeRequest,
+    EnvironmentUpgradeResponse,
     ServerInfoResponse,
     SystemDirectoriesResponse,
     SystemStatusResponse,
@@ -179,3 +182,50 @@ async def count_tmux_sessions() -> TmuxSessionsCountResponse:
     from frago.server.services import tmux_sessions_service as svc
 
     return TmuxSessionsCountResponse(**await asyncio.to_thread(svc.count_sessions))
+
+
+@router.get("/system/environment", response_model=EnvironmentResponse)
+async def get_environment(refresh: bool = False) -> EnvironmentResponse:
+    """跑 frago 需要的每样东西，本机装的是哪一版、外面出到哪一版。
+
+    清单照装机向导那份探测脚本，两处必须一致。默认读缓存（外面的版本号六小时一轮、
+    本机的一分钟一轮），`refresh=true` 才当场重问一遍。
+
+    十来个子进程加十来次跨境请求都是阻塞 IO，整趟挪到线程里跑。
+    """
+    from frago.server.services.environment_service import EnvironmentService
+
+    service = EnvironmentService.get_instance()
+    return EnvironmentResponse(**await asyncio.to_thread(service.snapshot, refresh))
+
+
+@router.post("/system/environment/upgrade", response_model=EnvironmentUpgradeResponse)
+async def start_environment_upgrade(
+    request: EnvironmentUpgradeRequest,
+) -> EnvironmentUpgradeResponse:
+    """把点名的那几样升到最新，活派给 agent 干。
+
+    服务端不拼升级命令——同一个名字在不同机器上装法不同，猜错的代价是人看到一句
+    「升级失败」。这里只把事实备齐（现在哪一版、外面到哪一版、这条命令的真实落点、
+    本机有哪些包管理器）写成任务书，交给 agent 判断和执行。
+
+    一次只跑一批，一样一样按顺序来：升级动的是共用的包管理器，并发会互相锁住。
+    已经有一批在跑时不排第二个队，原样退回当前进度。
+    """
+    from frago.server.services.environment_upgrade_service import (
+        EnvironmentUpgradeService,
+    )
+
+    service = EnvironmentUpgradeService.get_instance()
+    return EnvironmentUpgradeResponse(**await service.start(request.ids))
+
+
+@router.get("/system/environment/upgrade", response_model=EnvironmentUpgradeResponse)
+async def get_environment_upgrade_status() -> EnvironmentUpgradeResponse:
+    """这一批升级到哪一步了。界面开着的时候每两秒问一次。"""
+    from frago.server.services.environment_upgrade_service import (
+        EnvironmentUpgradeService,
+    )
+
+    service = EnvironmentUpgradeService.get_instance()
+    return EnvironmentUpgradeResponse(accepted=True, **service.status())

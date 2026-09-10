@@ -625,3 +625,64 @@ class TmuxSessionsCountResponse(BaseModel):
 
     total: int = 0
     total_memory_mb: int = 0
+
+
+class EnvironmentItem(BaseModel):
+    """环境仪表盘上的一格。
+
+    `current` 是本机装的那一版，`latest` 是外面出到的那一版，两个都可能为空：没装的
+    东西没有当前版本，没有公开版本源的东西（WorkBuddy）没有最新版本。`outdated` 只在
+    两个都拿得到、且外面那个确实更大时才为真。
+    """
+
+    id: str
+    name: str
+    group: str
+    required: bool = False
+    installed: bool = False
+    current: str | None = None
+    latest: str | None = None
+    outdated: bool = False
+
+
+class EnvironmentResponse(BaseModel):
+    """Response for GET /api/system/environment"""
+
+    items: list[EnvironmentItem] = Field(default_factory=list)
+    os: str = ""
+    # frago 自己是从哪儿装的：local 本地构建的 wheel、index 索引、unknown。
+    # 界面据此说明为什么这台机器上的 frago 不报可更新。
+    frago_source: str = "unknown"
+    # 外面那批版本号上次问到的时间（unix 秒）。没问到过就是空。
+    checked_at: float | None = None
+
+
+class EnvironmentUpgradeRequest(BaseModel):
+    """Request body for POST /api/system/environment/upgrade"""
+
+    ids: list[str] = Field(..., description="要升级的那几样，按这个顺序一样一样跑")
+
+
+class EnvironmentUpgradeItemState(BaseModel):
+    """一样东西这一轮升级到哪一步了。
+
+    `state` 五档：pending 排着队、running 正在跑、ok 升成了、skipped 不用升、
+    failed 没升成。`message` 是给人看的那句结论。
+    """
+
+    state: str = "pending"
+    message: str = ""
+    before: str | None = None
+    after: str | None = None
+
+
+class EnvironmentUpgradeResponse(BaseModel):
+    """Response for the upgrade endpoints"""
+
+    # 提交时才有意义：已经有一批在跑时为假，此时返回的是那一批的进度。
+    accepted: bool = True
+    running: bool = False
+    order: list[str] = Field(default_factory=list)
+    items: dict[str, EnvironmentUpgradeItemState] = Field(default_factory=dict)
+    started_at: float | None = None
+    finished_at: float | None = None
