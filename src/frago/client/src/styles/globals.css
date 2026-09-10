@@ -5516,3 +5516,147 @@ a:not(.btn):not(.nav-tab):not(.sidebar-github-link):hover {
     animation: none;
   }
 }
+
+/* ── 事务页：一句话建一件 ───────────────────────────────────────────
+   人只填一句话，标题/背景/完成判据由 agent 补。所以这里不是表单，是一个输入框
+   加一次等待，外加"它替我执行了什么"的回执——看不见执行了什么的按钮，没人敢按
+   第二次。 */
+
+.td-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+/* 添一件是这一页的主动作，用实心；刷新在旁边保持描边，主次一眼分得开。 */
+.td-add {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 6px 12px;
+  background: var(--accent-primary);
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-on-accent);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold, 600);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.td-add:hover {
+  filter: brightness(1.08);
+}
+
+/* 展开着的时候退成描边：面板本身已经在喊"你正在添一件"，按钮不必再喊一遍。 */
+.td-add--open {
+  background: transparent;
+  border-color: var(--border-color);
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+.td-composer {
+  margin: 0 var(--spacing-md) var(--spacing-sm);
+  padding: var(--spacing-md);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.td-composer-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.td-composer-input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
+.td-composer-input:disabled {
+  color: var(--text-muted);
+  cursor: wait;
+}
+
+.td-composer-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.td-composer-hint {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.td-composer-submit {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 6px 14px;
+  background: var(--accent-primary);
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-on-accent);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold, 600);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.td-composer-submit:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.td-composer-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.td-composer-result {
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--border-color);
+}
+
+.td-composer-verdict {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+}
+
+.td-composer-command {
+  display: block;
+  margin-top: var(--spacing-sm);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.td-composer-message {
+  margin: var(--spacing-sm) 0 0;
+  font-size: var(--font-size-sm);
+  line-height: 1.7;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}

@@ -235,6 +235,7 @@ export type {
   TodoQuery,
   TodoStatus,
   TodoPriority,
+  TodoComposeResponse,
 } from './client';
 
 // 事务是本机 `~/.frago/todo/` 下的文件，只有服务端读得到。桌面壳那一路没有对应
@@ -250,6 +251,12 @@ export const getTodos = withMode(
 export const getTodo = withMode(
   (todoId: string): Promise<httpApi.TodoItem> => httpApi.getTodo(todoId),
   (_todoId: string): Promise<httpApi.TodoItem> => Promise.reject(new Error(TODOS_UNAVAILABLE)),
+);
+
+export const composeTodo = withMode(
+  (description: string): Promise<httpApi.TodoComposeResponse> => httpApi.composeTodo(description),
+  (_description: string): Promise<httpApi.TodoComposeResponse> =>
+    Promise.reject(new Error(TODOS_UNAVAILABLE)),
 );
 
 // ============================================================

@@ -14,7 +14,7 @@
 
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ListChecks, RefreshCw, Search, X } from 'lucide-react';
+import { ListChecks, Loader2, Plus, RefreshCw, Search, X } from 'lucide-react';
 import * as api from '@/api';
 import type { TodoItem, TodoListResponse } from '@/api';
 import { usePageStore } from '@/stores/pageStore';
@@ -88,6 +88,14 @@ export default function TodoPage() {
   const [filter, setFilter] = useState<StatusFilter>('active');
   const [search, setSearch] = useState('');
 
+  // 「添一件」那一路。人只填 draft 这一句话，标题、背景、完成判据由 agent 补——所以
+  // 这里没有表单，只有一个输入框和一次等待。
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [composing, setComposing] = useState(false);
+  const [composeError, setComposeError] = useState<string | null>(null);
+  const [composed, setComposed] = useState<api.TodoComposeResponse | null>(null);
+
   const { refresh } = useAutoRefresh(
     async () => {
       setRefreshing(true);
@@ -122,6 +130,33 @@ export default function TodoPage() {
     });
   }, [todos, filter, search]);
 
+  /**
+   * 把那句话交给 agent，等它把事务建出来。
+   *
+   * 建完就跳到那条上：人写完一句话之后想看的是"它替我写成了什么样"，而不是回到
+   * 一份多了一行的清单里自己找。agent 的说法留在输入区上方——它可能没有新建，而是
+   * 按规矩把这句话追加到了已有的那条上，那种时候人必须看得见。
+   */
+  const submitDraft = async () => {
+    const text = draft.trim();
+    if (!text || composing) return;
+
+    setComposing(true);
+    setComposeError(null);
+    setComposed(null);
+    try {
+      const result = await api.composeTodo(text);
+      setComposed(result);
+      setDraft('');
+      await refresh();
+      if (result.todo_id) switchPage('todo_detail', result.todo_id);
+    } catch (e) {
+      setComposeError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setComposing(false);
+    }
+  };
+
   // 深链进来时，地址里那件可能正好被当前这一档筛掉了。以清单里找得到的为准，找
   // 不到就等下一次取回——事务全在一份清单里，不必为一件再跑一趟。
   const selected = currentTodoId ? todos.find((todo) => todo.id === currentTodoId) ?? null : null;
@@ -134,11 +169,74 @@ export default function TodoPage() {
           <h1 className="cs-title">{t('todos.title')}</h1>
           <p className="cs-subtitle">{t('todos.pageDesc')}</p>
         </div>
-        <button type="button" className="cs-refresh" onClick={refresh} disabled={refreshing}>
-          <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-          {t('common.refresh')}
-        </button>
+        <div className="td-head-actions">
+          <button
+            type="button"
+            className={`td-add ${composerOpen ? 'td-add--open' : ''}`}
+            onClick={() => setComposerOpen((open) => !open)}
+            aria-expanded={composerOpen}
+          >
+            <Plus size={14} />
+            {t('todos.compose.button')}
+          </button>
+          <button type="button" className="cs-refresh" onClick={refresh} disabled={refreshing}>
+            <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+            {t('common.refresh')}
+          </button>
+        </div>
       </div>
+
+      {composerOpen && (
+        <div className="td-composer">
+          <textarea
+            className="td-composer-input"
+            rows={3}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              // 事务描述常常要换行，所以回车留给换行，提交走 Cmd/Ctrl+Enter。
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                void submitDraft();
+              }
+            }}
+            placeholder={t('todos.compose.placeholder')}
+            disabled={composing}
+            aria-label={t('todos.compose.button')}
+          />
+          <div className="td-composer-foot">
+            <span className="td-composer-hint">{t('todos.compose.hint')}</span>
+            <button
+              type="button"
+              className="td-composer-submit"
+              onClick={() => void submitDraft()}
+              disabled={composing || draft.trim() === ''}
+            >
+              {composing && <Loader2 size={14} className="animate-spin" />}
+              {composing ? t('todos.compose.working') : t('todos.compose.submit')}
+            </button>
+          </div>
+
+          {composeError && <div className="td-error">{t('todos.compose.failed', { message: composeError })}</div>}
+
+          {composed && (
+            <div className="td-composer-result">
+              <p className="td-composer-verdict">
+                {composed.todo_id
+                  ? t(composed.created ? 'todos.compose.created' : 'todos.compose.appended', {
+                      id: composed.todo_id,
+                    })
+                  : t('todos.compose.nothingCreated')}
+              </p>
+              {/* 它替人敲了什么，得摆在明面上——看不见执行了什么的按钮，没人敢按第二次。 */}
+              {composed.command && (
+                <code className="td-composer-command">{composed.command.join(' ')}</code>
+              )}
+              {composed.message && <p className="td-composer-message">{composed.message}</p>}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="td-toolbar">
         <div className="td-filters">

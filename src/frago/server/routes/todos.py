@@ -6,8 +6,11 @@
 一模一样。任何一处在这里重排或重算，都会造出「命令行说第一条是 A、页面说是 B」
 的分裂。
 
-只读。改事务的口子留在命令行——事务是 agent 的工作账本，写入路径只有一条才不
-会两边打架。
+写入路径仍然只有命令行一条。界面上那个「添一件」不例外：它把用户填的那句话交给
+frago 自带的小 agent，由 agent 去敲 `frago todo add`。服务端从头到尾不碰
+`~/.frago/todo/` 下的文件——事务是 agent 的工作账本，两条写入路径迟早两边打架，
+而且 `todo add` 自带的那些规矩（标题被 slugify 成 id、同一件事不准开第二条）也
+只有走命令行才生效。
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from frago.todo.store import PRIORITIES, STATUSES, list_todos
 from frago.todo.store import get as get_todo
@@ -93,6 +97,47 @@ async def api_list_todos(
         todos=[TodoItem(**asdict(t)) for t in visible],
         counts=counts,
     )
+
+
+class TodoComposeRequest(BaseModel):
+    """界面上只填这一句话。"""
+
+    description: str
+
+
+class TodoComposeResponse(BaseModel):
+    """agent 跑完之后，界面要知道的三件事。
+
+    ``created`` 分开报，是因为 agent 按规矩可能不新建：描述的事情已经有一条时，
+    它会往那条上追加。界面照实说「记到已有的那件上了」，别把追加说成新建。
+    """
+
+    todo_id: str | None = None
+    created: bool = False
+    # agent 自己的说法，原样带给人看。
+    message: str = ""
+    # 它实际敲下去的那条命令。看得见执行了什么，这个按钮才不是黑箱。
+    command: list[str] | None = None
+
+
+@router.post("/todos", response_model=TodoComposeResponse)
+async def api_compose_todo(request: TodoComposeRequest) -> TodoComposeResponse:
+    """把一句话交给 agent，让它写成一件像样的事务。
+
+    这一路会真的起一个模型跑几轮，十几秒是常态——界面那边得有等待态，别按了没反应。
+    """
+    from frago.server.services.todo_compose_service import (
+        TodoComposeError,
+        TodoComposeService,
+    )
+
+    try:
+        result = await run_in_threadpool(TodoComposeService.compose, request.description)
+    except TodoComposeError as exc:
+        # 建不成的原因（没配模型、超时、agent 自己失败）都是人能处理的，原话带回去。
+        raise HTTPException(status_code=502, detail=exc.detail) from exc
+
+    return TodoComposeResponse(**result)
 
 
 @router.get("/todos/{todo_id}", response_model=TodoItem)

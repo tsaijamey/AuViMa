@@ -490,6 +490,30 @@ export async function getTodo(todoId: string): Promise<TodoItem> {
   return fetchApi<TodoItem>(`/todos/${encodeURIComponent(todoId)}`);
 }
 
+/** agent 替人建完事务之后的回话。 */
+export interface TodoComposeResponse {
+  /** 落到哪件事务上。agent 跑完却一件都没落下时为 null。 */
+  todo_id: string | null;
+  /** 新建的还是追加到已有那件上的——描述的事情已经有一条时，规矩要求它追加。 */
+  created: boolean;
+  /** agent 自己的说法，原样展示。 */
+  message: string;
+  /** 它实际敲下去的那条命令。看得见执行了什么，这个按钮才不是黑箱。 */
+  command: string[] | null;
+}
+
+/**
+ * 把一句话交给 agent，让它写成一件像样的事务。
+ *
+ * 这一路会真的起一个模型跑几轮，十几秒是常态——调用方必须有等待态。
+ */
+export async function composeTodo(description: string): Promise<TodoComposeResponse> {
+  return fetchApi<TodoComposeResponse>('/todos', {
+    method: 'POST',
+    body: JSON.stringify({ description }),
+  });
+}
+
 // ============================================================
 // Settings API
 // ============================================================
