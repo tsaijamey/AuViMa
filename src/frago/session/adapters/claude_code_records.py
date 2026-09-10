@@ -225,10 +225,14 @@ _IMAGE_PLACEHOLDER = "<image>"
 # **NEVER 改用 ``promptSource`` 当判据。** 它看着更干净（真人原话全是 ``typed``），
 # 但斜杠命令与命令回显那 863 条上它压根不存在，而另有 260 条真人原话同样不存在——
 # 老版本的引擎不写这个字段，缺失既不能证明是机器写的，也不能证明是人写的。
-_SLASH_COMMAND_PREFIX = "<command-name>"
 _LOCAL_OUTPUT_PREFIXES = ("<local-command-stdout>", "<local-command-stderr>")
 _BASH_INPUT_PREFIX = "<bash-input>"
 _BASH_OUTPUT_PREFIX = "<bash-stdout>"
+
+#: 斜杠命令那层包装：命令名、命令说明、参数三段，整条正文就是它们拼起来的。
+_COMMAND_ENVELOPE_RE = re.compile(
+    r"^(?:\s*<(command-name|command-message|command-args)>[\s\S]*?</\1>)+\s*$"
+)
 
 # 后台任务跑完那一刻，四种下场。机器名直接摆给人看等于没说。
 _TASK_STATUS_LABEL = {
@@ -247,6 +251,21 @@ def _tagged(text: str, tag: str) -> str:
     """取 ``<tag>…</tag>`` 里那一段。没有这个标签返回空串，NEVER 抛。"""
     match = re.search(rf"<{tag}>([\s\S]*?)</{tag}>", text)
     return match.group(1).strip() if match else ""
+
+
+def _is_command_envelope(text: str) -> bool:
+    """这条正文是不是整条都由斜杠命令那层包装构成。
+
+    **判「整条正文就是这几段标签」，不判「以哪一段开头」。** 三段的先后顺序由引擎自己
+    决定，同一个版本里两种都写得出来：内置命令是命令名排在最前面，技能类命令是命令说明
+    排在最前面。按开头判，技能类那一批（本机 84 条，``/git-push``、``/pypi-publish``
+    这些）永远认不出，那几段标签就原样摆到了「你说」卡片上——人看见自己「说」了一段
+    尖括号。
+
+    **也不判「正文里出现过这个标签」。** 一句自然语言里提到 ``<command-name>``（讨论
+    这套包装本身的时候就会）是另一回事，整条正文从头到尾都是标签才是包装。
+    """
+    return "<command-name>" in text and bool(_COMMAND_ENVELOPE_RE.match(text))
 
 
 def _split_trailing_reminders(text: str) -> tuple[str, list[str]]:
@@ -827,6 +846,23 @@ class _Translator:
             )
             return
 
+        # 序 4b：本地命令。新版本的引擎不再把斜杠命令写成「用户消息」，改写成引擎侧记事，
+        # 一条记命令本身、一条记它打印出来的东西（本机 101 条，``/rename``、``/goal``、
+        # ``/model`` 这些）。落盘形态换了，人做的事没换：命令仍然是人敲的那一下，输出仍然
+        # 是贴回上下文的东西。所以两条各自归回本来那一档，跟老写法落在同一种记录上。
+        #
+        # 不归回去的后果有两层。看得见的一层是这条命令在「对话」那一档里整个消失，只在
+        # 「系统」那一档摆着一段尖括号，人以为命令没发出去——它其实已经跑完了。另一层是
+        # 输入区上方那个信封：它等的是一条「你说」记录来跟自己对上，等不到就一直挂着说
+        # 没进去，直到等满上限自己撤掉。
+        if subtype == "local_command":
+            content = _text_of(row.get("content")).lstrip()
+            if _is_command_envelope(content):
+                self._emit_slash_command(row, content, [])
+                return
+            if self._emit_local_output(row, content):
+                return
+
         # 序 5：其余 subtype 归注入内容；Stop hook 汇总里没追加上下文也没拦截的丢弃
         if subtype == "stop_hook_summary":
             blocks = _hook_blocks(row.get("hookAdditionalContext"))
@@ -1275,18 +1311,8 @@ class _Translator:
 
         # 斜杠命令。落盘时被拆成三段：命令名、命令说明、参数。**命令说明丢掉**——它是
         # 命令名去掉斜杠（``/goal`` 与 ``goal``），摆出来是把同一个词说两遍。
-        if stripped.startswith(_SLASH_COMMAND_PREFIX):
-            self._emit(
-                row,
-                "user.say",
-                {
-                    "text": _tagged(stripped, "command-args"),
-                    "images": _media_blocks(content),
-                    "input_mode": "slash-command",
-                    "command": _tagged(stripped, "command-name"),
-                    "is_tool_result": False,
-                },
-            )
+        if _is_command_envelope(stripped):
+            self._emit_slash_command(row, stripped, _media_blocks(content))
             return True
 
         # 叹号直跑的 shell。命令本身就是全部内容，没有另外的正文。
@@ -1324,11 +1350,36 @@ class _Translator:
             return True
 
         # 斜杠命令的回显。跑在本机、结果贴回上下文，形态上跟叹号那一路是同一件事。
+        return self._emit_local_output(row, stripped)
+
+    def _emit_slash_command(
+        self, row: dict[str, Any], text: str, images: list[dict[str, Any]]
+    ) -> None:
+        """把斜杠命令那层包装拆开，落成人敲的那一下。
+
+        命令本身进 ``command``，参数进 ``text``。界面靠 ``command`` 这一栏亮命令卡片；
+        输入区上方那个等着落地的信封也靠这两半拼回人打的原话来跟自己比对，缺了它就一直
+        挂着说没进去。
+        """
+        self._emit(
+            row,
+            "user.say",
+            {
+                "text": _tagged(text, "command-args"),
+                "images": images,
+                "input_mode": "slash-command",
+                "command": _tagged(text, "command-name"),
+                "is_tool_result": False,
+            },
+        )
+
+    def _emit_local_output(self, row: dict[str, Any], text: str) -> bool:
+        """命令打印给人看的那一段。认出来落成注入内容返回 True，不是这形状返回 False。"""
         for prefix in _LOCAL_OUTPUT_PREFIXES:
-            if not stripped.startswith(prefix):
+            if not text.startswith(prefix):
                 continue
             tag = prefix[1:-1]
-            body = _tagged(stripped, tag)
+            body = _tagged(text, tag)
             is_err = tag.endswith("stderr")
             self._emit(
                 row,

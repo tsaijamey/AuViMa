@@ -517,7 +517,16 @@ export function useWorkbenchRecords(
     const spoke = records.some(
       (r) => r.ts >= awaitingSince - 1_000 && AGENT_ACTIVITY.has(r.kind)
     );
-    if (spoke) {
+    // 跑在本机、跑完就完的那些命令（`/rename`、`/clear`）根本不会惊动模型，等 agent
+    // 开口是在等一件永远不会发生的事——那句"在等"要一直挂到上限才自己撤掉，而命令其实
+    // 早就跑完了。命令自己打印出来的那段就是回执，见到它就收。
+    const printed = records.some(
+      (r) =>
+        r.ts >= awaitingSince - 1_000 &&
+        r.kind === 'context.inject' &&
+        r.payload.channel === 'local-command-output'
+    );
+    if (spoke || printed) {
       setAwaitingSince(null);
       return;
     }

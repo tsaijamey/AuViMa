@@ -559,6 +559,39 @@ describe('信封：已发送 → 已入队列 → 成为一轮', () => {
     await waitFor(() => expect(result.current.outbound).toHaveLength(0), { timeout: 4000 });
   });
 
+  it('跑完就完的命令不会惊动模型，它自己打印的那段就是回执', async () => {
+    // `/rename` 只改个名字，agent 从头到尾不会开口。等 agent 开口就是等一件永远不会
+    // 发生的事——那句"在等"要一直挂到上限才自己撤掉，而命令早就跑完了。
+    let landed = false;
+    vi.stubGlobal(
+      'fetch',
+      stubGrowing(() =>
+        landed
+          ? {
+              ...record(3),
+              ts: Date.now(),
+              kind: 'context.inject',
+              payload: {
+                channel: 'local-command-output',
+                source: 'local-command',
+                stdout: 'Session renamed to: 修标签显示',
+              },
+            }
+          : null
+      )
+    );
+    const { result } = renderHook(() => useWorkbenchRecords(SID, { live: true }));
+    await waitFor(() => expect(result.current.records).toHaveLength(3));
+
+    act(() => {
+      result.current.markSent('/rename');
+    });
+    expect(result.current.awaitingAgent).toBe(true);
+
+    landed = true;
+    await waitFor(() => expect(result.current.awaitingAgent).toBe(false), { timeout: 4000 });
+  });
+
   it('发送接口回来了就收信封：那一轮都说完了，它必定已经在会话里', async () => {
     vi.stubGlobal('fetch', stubSession(() => 3));
     const { result } = renderHook(() => useWorkbenchRecords(SID));

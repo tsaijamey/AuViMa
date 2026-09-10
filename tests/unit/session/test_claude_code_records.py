@@ -1421,6 +1421,76 @@ def test_rule22b_slash_command_without_args_keeps_the_command() -> None:
     assert records[0].payload["text"] == ""
 
 
+def test_rule22b_slash_command_with_the_message_tag_first_still_unwraps() -> None:
+    """三段标签的先后顺序不固定，技能类命令是命令说明排在最前面。
+
+    本机 84 条是这个顺序（``/git-push``、``/pypi-publish`` 这些）。按开头判就全都认不
+    出，那几段标签会原样摆到「你说」卡片上——人看见自己「说」了一段尖括号。
+    """
+    rows = [
+        _user(
+            "u1",
+            "<command-message>pypi-publish</command-message>\n"
+            "<command-name>/pypi-publish</command-name>",
+        )
+    ]
+    records = translate_records(rows, SESSION)
+    assert _kinds(records) == ["user.say"]
+    assert records[0].payload["command"] == "/pypi-publish"
+    assert records[0].payload["input_mode"] == "slash-command"
+
+
+def test_rule22b_a_sentence_that_merely_mentions_the_tags_stays_a_person_speaking() -> None:
+    """一句自然语言里提到这几个标签是另一回事，NEVER 当成命令。"""
+    rows = [_user("u1", "界面上摆着 <command-name>/rename</command-name> 这一段，是不是坏了？")]
+    records = translate_records(rows, SESSION)
+    assert _kinds(records) == ["user.say"]
+    assert records[0].payload.get("command") is None
+
+
+def test_rule04b_local_command_written_as_engine_bookkeeping_is_still_the_person_typing() -> None:
+    """新版本引擎把斜杠命令写成引擎侧记事，人敲的仍然是那一下。
+
+    落盘形态换了就认不出的话，这条命令在「对话」那一档里整个消失，只在「系统」那一档
+    摆着一段尖括号；输入区上方那个信封也等不到它，一直挂着说没进去。
+    """
+    rows = [
+        _row(
+            "u1",
+            "system",
+            subtype="local_command",
+            level="info",
+            content="<command-name>/rename</command-name>\n"
+            "            <command-message>rename</command-message>\n"
+            "            <command-args></command-args>",
+        ),
+        _row(
+            "u2",
+            "system",
+            subtype="local_command",
+            level="info",
+            content="<local-command-stdout>Session renamed to: 修标签显示</local-command-stdout>",
+        ),
+    ]
+    records = translate_records(rows, SESSION)
+    assert _kinds(records) == ["user.say", "context.inject"]
+    assert records[0].payload["command"] == "/rename"
+    assert records[0].payload["input_mode"] == "slash-command"
+    assert records[1].payload["channel"] == "local-command-output"
+    assert records[1].payload["stdout"] == "Session renamed to: 修标签显示"
+
+
+def test_rule04b_other_local_command_shapes_fall_through_to_the_catch_all() -> None:
+    """认不出的本地命令记事照旧归注入内容，NEVER 因为多了这一路而丢记录。"""
+    rows = [
+        _row("u1", "system", subtype="local_command", level="info", content="换了一种没见过的写法")
+    ]
+    records = translate_records(rows, SESSION)
+    assert _kinds(records) == ["context.inject"]
+    assert records[0].payload["channel"] == "local_command"
+    assert records[0].payload["body"] == "换了一种没见过的写法"
+
+
 def test_rule22b_local_command_output_is_not_a_person_speaking() -> None:
     """斜杠命令跑完的回显是**输出**，不是人说的话。"""
     rows = [_user("u1", "<local-command-stdout>Goal set: 在 webui 添加按钮</local-command-stdout>")]
