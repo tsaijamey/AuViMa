@@ -1075,6 +1075,7 @@
       "pinnedHeader": "Pinned",
       "restHeader": "Everything else",
       "orphanWorkersHeader": "Workers with no known caller",
+      "pageProgress": "Showing {{shown}} of {{total}} — keep scrolling for more",
       "workerCount": "launched {{n}} workers",
       "expandWorkers": "Show the {{n}} workers this session launched",
       "collapseWorkers": "Hide the workers this session launched",

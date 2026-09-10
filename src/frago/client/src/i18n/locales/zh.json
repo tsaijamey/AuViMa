@@ -1075,6 +1075,7 @@
       "pinnedHeader": "置顶",
       "restHeader": "其余",
       "orphanWorkersHeader": "不知道谁派的 worker",
+      "pageProgress": "已显示 {{shown}} / {{total}}，继续往下滚",
       "workerCount": "派出去 {{n}} 个 worker",
       "expandWorkers": "展开这场派出去的 {{n}} 个 worker",
       "collapseWorkers": "折起这场派出去的 worker",

@@ -42,7 +42,7 @@
  * 撞见过整片清单已经摆好、标题还没出现。标题上坐着折叠开关，它不该等任何东西。
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Virtuoso } from 'react-virtuoso';
 import { ChevronDown, ChevronRight, Loader2, Mail, Pin, Plus, RefreshCw, Search, X } from 'lucide-react';
@@ -78,6 +78,18 @@ const CHIP_OFF = 'text-text-muted hover:bg-bg-hover hover:text-text-secondary';
 
 /** 四档筛选加一个全部。次序与判定顺序一致，看的人不必再学一套排列。 */
 const FILTERS: StatusFilter[] = ['all', 'running', 'error', 'done', 'idle'];
+
+/**
+ * 一次往清单里放多少场。滚到底再放下一批。
+ *
+ * **窗口化渲染解决的是"画多少个节点"，不是"这条清单有多长"。** 时间范围默认不限，本机
+ * 七百多场会话一次全摆进去，滚动条被压成一道几乎没有长度的细缝——人拖一下就滑过几百场，
+ * 想回到刚才看的位置只能重新找。把清单切成一批一批之后，滚动条的长度重新与"我看过多少"
+ * 对得上，而不是与"这台机器上一共存过多少场"对得上。
+ *
+ * 五十场是一屏半到两屏，滚到底那一下续上下一批，人不必去点任何东西。
+ */
+const PAGE_SIZE = 50;
 
 /** 筛选档的**词表键**。取字在渲染时做，换语言这一行跟着变。 */
 const FILTER_LABEL_KEY: Record<StatusFilter, string> = {
@@ -182,6 +194,8 @@ export default function SessionRail({
   const [expandedWorkers, setExpandedWorkers] = useState<Set<string>>(new Set());
   /** 认不出谁派的那堆 worker 那一区是不是展开着。默认折起来。 */
   const [orphansOpen, setOrphansOpen] = useState(false);
+  /** 眼下这条清单已经放进来多少场。滚到底加一批（见 `PAGE_SIZE`）。 */
+  const [shown, setShown] = useState(PAGE_SIZE);
 
   const familyCounts = useMemo(() => {
     let cc = 0;
@@ -258,6 +272,31 @@ export default function SessionRail({
   const searching = search.trim().length > 0;
 
   /**
+   * 这一批清单放到哪儿了。
+   *
+   * **预算先喂主干，主干摆完才轮到末尾那一区。** 那一区默认折着，折着的时候一条都不渲染，
+   * 也就不该占掉这一批的名额——否则人还没看见任何 worker，主干却已经被截断了。
+   *
+   * 换一个筛选档、改一次搜索词，清单换成了另一批会话，这时候还停在第三页是答非所问：
+   * 那三页是上一批的进度。所以那三样一变就回到第一页（见下面的重置）。置顶不在此列——
+   * 置顶区不受分页管，它本来就是人自己挑出来的几场，摆在最上面。
+   */
+  const orphansVisible = orphansOpen || searching;
+  const pagedTrunk = useMemo(() => trunkRows.slice(0, shown), [trunkRows, shown]);
+  const pagedOrphans = useMemo(
+    () => (orphansVisible ? orphanRows.slice(0, Math.max(0, shown - trunkRows.length)) : []),
+    [orphansVisible, orphanRows, shown, trunkRows.length]
+  );
+  /** 这一刻还能往下放多少场，与已经放了多少场。底下那行进度报的就是这两个数。 */
+  const loadable = trunkRows.length + (orphansVisible ? orphanRows.length : 0);
+  const loaded = pagedTrunk.length + pagedOrphans.length;
+  const hasMore = loaded < loadable;
+
+  useEffect(() => {
+    setShown(PAGE_SIZE);
+  }, [search, status, days]);
+
+  /**
    * 摆进列表的每一行：分区标题与会话卡走同一条队。
    *
    * 分区标题做成**普通一行**而不是窗口化列表的 group header：group header 的位置要等
@@ -290,17 +329,15 @@ export default function SessionRail({
       ];
     };
 
-    const body: RailRow[] = trunkRows.flatMap(trunkWithKids);
+    const body: RailRow[] = pagedTrunk.flatMap(trunkWithKids);
     const tail: RailRow[] = orphanRows.length
       ? [
           { kind: 'workers-header' as const },
-          ...(orphansOpen || searching
-            ? orphanRows.map((session) => ({
-                kind: 'session' as const,
-                session,
-                nested: true,
-              }))
-            : []),
+          ...pagedOrphans.map((session) => ({
+            kind: 'session' as const,
+            session,
+            nested: true,
+          })),
         ]
       : [];
 
@@ -317,13 +354,25 @@ export default function SessionRail({
     pins.pinned.length,
     pins.collapsed,
     pinnedRows,
-    trunkRows,
+    pagedTrunk,
     childrenOf,
-    orphanRows,
+    orphanRows.length,
+    pagedOrphans,
     expandedWorkers,
-    orphansOpen,
     searching,
   ]);
+
+  /**
+   * 展开末尾那一区。
+   *
+   * 展开的同时先给它一批名额：主干还没摆完时，那一区的名额是 0，人点开会看到一个写着
+   * 一千两百场的标题底下一条都没有。展开这一下本身就是"我要看它们"，名额跟上。
+   */
+  const toggleOrphans = () => {
+    const opening = !orphansOpen;
+    if (opening) setShown((s) => Math.max(s, trunkRows.length + PAGE_SIZE));
+    setOrphansOpen(opening);
+  };
 
   const toggleWorkers = (session: WorkbenchSession) => {
     setExpandedWorkers((prev) => {
@@ -348,6 +397,33 @@ export default function SessionRail({
       );
     }
   };
+
+  /**
+   * 清单头尾那两块。
+   *
+   * 尾巴上报这一刻放了多少、还有多少——滚动条不再是"全部会话"的长度之后，人需要另一处
+   * 知道下面还有没有东西。全部放完就把这行收掉，只留原来那点留白：都摆出来了还挂着一行
+   * 数字，是在报一件已经没有悬念的事。
+   *
+   * 用 `useMemo` 兜住：这两个组件的**身份**一变，列表会把它们整个重挂载，滚动位置跟着跳。
+   */
+  const listComponents = useMemo(
+    () => ({
+      Header: () => <div className="h-2" />,
+      Footer: () =>
+        hasMore ? (
+          <div
+            data-testid="rail-page-progress"
+            className="px-2.5 pb-4 pt-2 text-center text-[11px] text-text-muted"
+          >
+            {t('workbench.rail.pageProgress', { shown: loaded, total: loadable })}
+          </div>
+        ) : (
+          <div className="h-4" />
+        ),
+    }),
+    [hasMore, loaded, loadable, t]
+  );
 
   const handleCopy = async (session: WorkbenchSession) => {
     try {
@@ -549,9 +625,11 @@ export default function SessionRail({
             initialItemCount={Math.min(rows.length, 30)}
             /* 滚动容器的内容不许贴着容器上下沿。顶上 8px 让第一张卡与筛选区之间有
                一道呼吸，底下 16px 让最后一张滚到底时不是被硬切在边框上。 */
-            components={{
-              Header: () => <div className="h-2" />,
-              Footer: () => <div className="h-4" />,
+            components={listComponents}
+            /* 滚到底就续上下一批。不摆"加载更多"按钮：人已经滚到底了，那一下就是
+               "还要看"本身，再让他点一次是白让他动一次手。 */
+            endReached={() => {
+              if (hasMore) setShown((s) => s + PAGE_SIZE);
             }}
             computeItemKey={(_, row) =>
               row.kind === 'session' ? row.session.session_id : row.kind
@@ -591,16 +669,12 @@ export default function SessionRail({
                 return (
                   <button
                     type="button"
-                    onClick={() => setOrphansOpen((v) => !v)}
-                    aria-expanded={orphansOpen || searching}
+                    onClick={toggleOrphans}
+                    aria-expanded={orphansVisible}
                     data-testid="workers-header"
                     className="flex w-full items-center gap-1.5 px-2.5 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wide text-text-muted transition-colors duration-200 hover:text-text-secondary"
                   >
-                    {orphansOpen || searching ? (
-                      <ChevronDown size={12} />
-                    ) : (
-                      <ChevronRight size={12} />
-                    )}
+                    {orphansVisible ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                     <span>{t('workbench.rail.orphanWorkersHeader')}</span>
                     <span className="font-mono opacity-70">{orphanRows.length}</span>
                   </button>
