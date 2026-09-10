@@ -5660,3 +5660,446 @@ a:not(.btn):not(.nav-tab):not(.sidebar-github-link):hover {
   color: var(--text-secondary);
   white-space: pre-wrap;
 }
+
+/* === 环境仪表盘 === */
+/* 遮罩带模糊：这扇窗盖住的是整片工作区，底下那些字如果还清清楚楚，眼睛会一直被它们
+   拽回去。模糊不是装饰，是把注意力交给上面这张表。
+
+   它不接点击。窗里是一张要来回对照着读的表，视线在十几格之间移动时鼠标常落在格与格
+   的空隙上，点周围就关的话，一失手整张表就没了，回来还得重问一遍网络。 */
+.envc-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-md);
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.envc-card {
+  width: min(960px, 100%);
+  max-height: calc(100vh - 2 * var(--spacing-md));
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  overflow: hidden;
+  box-shadow: 0 24px 60px var(--shadow-color);
+}
+
+.envc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.envc-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.envc-subtitle {
+  font-weight: 400;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+.envc-header-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.envc-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.envc-icon-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.envc-icon-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.envc-error,
+.envc-note {
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  padding: var(--spacing-sm);
+  border-radius: var(--radius-sm);
+}
+
+.envc-error {
+  background: var(--accent-error-10);
+  color: var(--accent-error);
+}
+
+.envc-note {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+
+.envc-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.envc-empty {
+  padding: var(--spacing-lg);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.envc-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.envc-group-title {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* 默认每行四格。四格是一屏横着扫得完、又不至于让版本号折行的那个数；窄下去依次退到
+   三格、两格、一格，而不是让格子自己越挤越瘦。 */
+.envc-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--spacing-sm);
+}
+
+@media (max-width: 900px) {
+  .envc-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .envc-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 440px) {
+  .envc-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 一格是一整块，状态靠整块的底色和边框说话，不靠边上加一条竖杠。 */
+.envc-cell {
+  min-width: 0;
+  padding: 10px var(--spacing-sm);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.envc-cell--outdated {
+  background: var(--accent-warning-10);
+  border-color: color-mix(in srgb, var(--accent-warning) 34%, transparent);
+}
+
+.envc-cell--missing-required {
+  background: var(--accent-error-10);
+  border-color: color-mix(in srgb, var(--accent-error) 34%, transparent);
+}
+
+/* 选装的东西没装不是毛病，是一项还没开的能力：整格退到背景里，别当成故障报出来。 */
+.envc-cell--missing {
+  background: transparent;
+  border-style: dashed;
+}
+
+.envc-cell-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.envc-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+
+.envc-dot--current {
+  background: var(--text-dim);
+}
+
+.envc-dot--outdated {
+  background: var(--accent-warning);
+}
+
+.envc-dot--missing-required {
+  background: var(--accent-error);
+}
+
+.envc-dot--missing {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--text-dim);
+}
+
+.envc-cell-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.envc-tag {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: calc(10px * var(--font-scale));
+  line-height: 15px;
+}
+
+/* 当前版本是这一格的主角：人来这儿要知道的第一件事是「我现在跑的是哪一版」。
+   等宽数字，好让上下几格能横着比。 */
+.envc-cell-current {
+  font-size: calc(15px * var(--font-scale));
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.envc-cell--missing .envc-cell-current,
+.envc-cell--missing-required .envc-cell-current {
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.envc-cell-latest {
+  font-size: calc(11px * var(--font-scale));
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.envc-cell--outdated .envc-cell-latest {
+  color: var(--accent-warning);
+}
+
+/* === 侧边栏上那颗入口按钮 === */
+/* 位置在额度条和深浅色那一排之间：上面是「我还剩多少」，下面是「界面怎么显示」，
+   中间这颗管的是「我这台机器齐不齐」，三件事同属栏底那一档。 */
+.rail-env {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: var(--nav-item-radius);
+  color: var(--sidebar-item-unselected-text);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.rail-env:hover {
+  background: var(--bg-hover);
+  color: var(--sidebar-item-selected-text);
+}
+
+.rail-env:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.rail-env-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
+.rail-env-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(10px * var(--font-scale));
+  color: var(--text-muted);
+  text-align: left;
+}
+
+/* 待办数写成数字不写成小红点：人是照着这个数字决定要不要点开的，一个点只说「有」，
+   说不出「几样」。 */
+.rail-env-count {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  min-width: 13px;
+  padding: 0 2px;
+  font-size: 9px;
+  line-height: 13px;
+  font-weight: 600;
+  text-align: center;
+  border-radius: 7px;
+  background: var(--accent-warning);
+  color: var(--text-on-accent);
+  pointer-events: none;
+}
+
+/* === 环境仪表盘：升级动作 === */
+/* 「全部升级」跟在标题那一行。它是这扇窗里唯一的主动作，所以给足底色；旁边的刷新和
+   关闭仍旧是安静的图标。 */
+.envc-upgrade-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--accent-primary);
+  color: var(--text-on-accent);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.envc-upgrade-all:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-primary) 85%, white);
+}
+
+.envc-upgrade-all:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.envc-upgrade-all:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* 正在跑的时候那条说明换成醒目一点的底：它解释的是「机器上此刻正在装东西」，
+   人等待时唯一想看的就是这句。 */
+.envc-note--busy {
+  background: var(--accent-info-10);
+  color: var(--accent-info-text);
+}
+
+/* 单格里那颗升级按钮。它排在版本号下面而不是挤进标题行：标题行已经有名字和「必装」
+   标签，再塞一颗按钮，三样东西都读不清。 */
+.envc-cell-upgrade {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: calc(11px * var(--font-scale));
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.envc-cell-upgrade:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.envc-cell-upgrade:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.envc-cell-upgrade:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* 这一格自己那一轮的下场。跑完不清掉——人回头要知道刚才到底成没成。 */
+.envc-cell-job {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: calc(11px * var(--font-scale));
+  line-height: 1.4;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.envc-cell-job--running {
+  color: var(--accent-info-text);
+}
+
+.envc-cell-job--ok {
+  color: var(--accent-success);
+}
+
+.envc-cell-job--failed {
+  color: var(--accent-error);
+}
+
+/* 跑完那一轮的总账。有失败就用红底——那一轮没做成的事，人得先看见再决定要不要管。 */
+.envc-note--done {
+  background: var(--accent-primary-10);
+  color: var(--text-secondary);
+}
+
+.envc-note--failed {
+  background: var(--accent-error-10);
+  color: var(--accent-error);
+}

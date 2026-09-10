@@ -1203,3 +1203,31 @@ export const getTmuxSessionCount = withMode(
   () => httpApi.getTmuxSessionCount(),
   () => Promise.resolve({ total: 0, total_memory_mb: 0 }),
 );
+
+/* 环境仪表盘同样只有 HTTP 服务这一条路：桌面壳里返回空表，界面按「问不到」画，
+   不弹错。 */
+export const getEnvironment = withMode(
+  (refresh?: boolean) => httpApi.getEnvironment(refresh),
+  (_refresh?: boolean) =>
+    Promise.resolve({ items: [], os: '', frago_source: 'unknown', checked_at: null }),
+);
+
+/* 升级要派 agent，只有 HTTP 服务这一条路。桌面壳里当作没接受，界面照常显示表格。 */
+const IDLE_UPGRADE = {
+  accepted: false,
+  running: false,
+  order: [] as string[],
+  items: {},
+  started_at: null,
+  finished_at: null,
+};
+
+export const startEnvironmentUpgrade = withMode(
+  (ids: string[]) => httpApi.startEnvironmentUpgrade(ids),
+  (_ids: string[]) => Promise.resolve(IDLE_UPGRADE),
+);
+
+export const getEnvironmentUpgradeStatus = withMode(
+  () => httpApi.getEnvironmentUpgradeStatus(),
+  () => Promise.resolve(IDLE_UPGRADE),
+);

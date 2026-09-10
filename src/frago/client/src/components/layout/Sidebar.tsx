@@ -21,7 +21,7 @@
  * 开用量月历——两件事都是「我还剩多少」，放在一起，与顶上的 logo 分居这根栏的两头。
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import {
@@ -32,6 +32,8 @@ import {
   Settings,
   PanelLeft,
   CalendarDays,
+  Gauge,
+  Loader2,
   Moon,
   Sun,
   Terminal,
@@ -39,8 +41,10 @@ import {
 import { useAppStore, type PageType } from '@/stores/appStore';
 import { useClaudeUsage } from '@/hooks/useClaudeUsage';
 import { useTmuxSessionCount } from '@/hooks/useTmuxSessions';
+import { countAttention, useEnvironment, useEnvironmentUpgrade } from '@/hooks/useEnvironment';
 import TokenCalendarModal from '@/components/sessionWorkbench/TokenCalendarModal';
 import TmuxSessionsModal from './TmuxSessionsModal';
+import EnvironmentModal from './EnvironmentModal';
 import type { ClaudeUsageBucket } from '@/types/api';
 
 export interface RailItem {
@@ -176,6 +180,75 @@ function UsageBars({ expanded }: { expanded: boolean }) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * 环境检查的入口，夹在额度条和深浅色那一排之间。
+ *
+ * 上面是「我还剩多少」，下面是「界面怎么显示」，这一颗管的是「我这台机器齐不齐」，
+ * 三件事同属栏底那一档。
+ *
+ * 角上那个数字是「缺了的必装项 + 能升的那些」加起来的个数，没有就不显示——常年挂着
+ * 一个 0 等于常年占着一块地方说「没事」。
+ *
+ * **升级的状态住在这里，不住在浮窗里。** 升级是关了窗还在继续的事——它跑在服务端，
+ * 界面开着没开着都不影响。状态如果跟着浮窗一起销毁，人关掉窗再打开看到的是一张干净
+ * 的表，只能猜刚才那下是不是断了。这根栏从进页面到离开一直在，把状态放在它手上，
+ * 浮窗随时关、随时开，接回来的都是同一轮升级。
+ *
+ * 正在升级时图标上转起来，人不用打开浮窗也知道机器上还在装东西。
+ */
+function RailEnvironment({ expanded }: { expanded: boolean }) {
+  const { t } = useTranslation();
+  const environment = useEnvironment();
+  const [open, setOpen] = useState(false);
+
+  // 升完立刻重新问一次版本号：表上那个数字变掉，才算这次升级交付了。
+  const refreshAfterUpgrade = useCallback(() => {
+    void environment.reload(false);
+  }, [environment]);
+  const upgrade = useEnvironmentUpgrade(refreshAfterUpgrade);
+
+  const attention = countAttention(environment.data);
+  const tooltip = upgrade.busy
+    ? t('envCheck.railUpgrading')
+    : t('envCheck.railTooltip', { n: attention });
+
+  return (
+    <>
+      <button
+        type="button"
+        className="rail-env"
+        onClick={() => setOpen(true)}
+        title={tooltip}
+        aria-label={tooltip}
+      >
+        <span className="rail-env-icon">
+          {upgrade.busy ? <Loader2 {...ICON} className="cs-spin" /> : <Gauge {...ICON} />}
+          {!upgrade.busy && attention > 0 ? (
+            <span className="rail-env-count">{attention}</span>
+          ) : null}
+        </span>
+        {expanded ? (
+          <span className="rail-env-label">
+            {upgrade.busy ? t('envCheck.railUpgradingShort') : t('envCheck.railLabel')}
+          </span>
+        ) : null}
+      </button>
+
+      {/* 挂到 body 上，理由和月历那一处相同：左栏自己是一层堆叠上下文。 */}
+      {open
+        ? createPortal(
+            <EnvironmentModal
+              environment={environment}
+              upgrade={upgrade}
+              onClose={() => setOpen(false)}
+            />,
+            document.body
+          )
+        : null}
+    </>
   );
 }
 
@@ -322,6 +395,7 @@ export default function Sidebar() {
 
       <div className="rail-foot">
         <UsageBars expanded={expanded} />
+        <RailEnvironment expanded={expanded} />
         <RailTools />
       </div>
     </nav>

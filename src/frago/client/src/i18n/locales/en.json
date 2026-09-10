@@ -1389,5 +1389,43 @@
       "allClosed": "Closed {{n}} sessions",
       "partial": "Closed {{n}}, {{failed}} failed"
     }
+  },
+  "envCheck": {
+    "title": "Environment",
+    "railLabel": "Environment",
+    "railTooltip": "What frago needs on this machine, and which version each one is. {{n}} worth a look",
+    "refresh": "Check again",
+    "close": "Close",
+    "empty": "Could not read this machine",
+    "checkedAt": "Upstream versions checked {{time}}",
+    "neverChecked": "Upstream versions not checked yet",
+    "notInstalled": "Not installed",
+    "latest": "Latest {{version}}",
+    "latestUnknown": "No public version to check",
+    "localBuildNote": "The frago on this machine was installed from a locally built package. Its version is usually ahead of the published one, so it never reports an update.",
+    "tag": {
+      "required": "Required"
+    },
+    "group": {
+      "frago": "frago itself",
+      "required": "Required to install frago",
+      "optional": "Each enables one capability",
+      "agent": "Agent CLIs"
+    },
+    "upgradeAll": "Upgrade all ({{n}})",
+    "upgradingAll": "Upgrading",
+    "upgradeOne": "Upgrade",
+    "installOne": "Install",
+    "busyNote": "Really installing on this machine: frago sent an agent to upgrade them one by one the way each was installed. You can close this window; the upgrade keeps running.",
+    "job": {
+      "pending": "Queued",
+      "running": "Upgrading",
+      "ok": "Upgraded",
+      "skipped": "Nothing to do",
+      "failed": "Did not upgrade"
+    },
+    "railUpgrading": "Upgrading this machine's environment — open to see progress",
+    "railUpgradingShort": "Upgrading",
+    "doneNote": "Last run: {{ok}} upgraded, {{failed}} failed, {{skipped}} left alone. Each failure says below where it got stuck."
   }
 }

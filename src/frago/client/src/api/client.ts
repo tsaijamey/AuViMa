@@ -117,6 +117,8 @@ import type {
   TmuxSessionsResponse,
   TmuxSessionsCount,
   CloseTmuxSessionsResponse,
+  EnvironmentResponse,
+  EnvironmentUpgradeResponse,
 } from '@/types/api';
 
 export type {
@@ -1204,4 +1206,31 @@ export async function setTmuxCleanupThreshold(hours: number): Promise<TmuxSessio
 /** 只数个数和内存——左下角那个数字每分钟问一次的就是它，不读任何记录。 */
 export async function getTmuxSessionCount(): Promise<TmuxSessionsCount> {
   return fetchApi<TmuxSessionsCount>('/system/tmux-sessions/count');
+}
+
+/**
+ * 跑 frago 需要的每样东西，本机装的是哪一版、外面出到哪一版。
+ *
+ * 默认读服务端的缓存（外面的版本号六小时一轮），所以侧边栏那颗按钮每次加载页面问一遍
+ * 不会真的打十来次跨境请求。`refresh` 为真才当场重问。
+ */
+export async function getEnvironment(refresh = false): Promise<EnvironmentResponse> {
+  return fetchApi<EnvironmentResponse>(`/system/environment${refresh ? '?refresh=true' : ''}`);
+}
+
+/**
+ * 把点名的那几样升到最新。服务端派 agent 去干，一样一样按顺序跑。
+ *
+ * 立刻返回，不等升完——一样东西可能要下载几百 MB。进度问下面那条。
+ */
+export async function startEnvironmentUpgrade(ids: string[]): Promise<EnvironmentUpgradeResponse> {
+  return fetchApi<EnvironmentUpgradeResponse>('/system/environment/upgrade', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  });
+}
+
+/** 这一批升级到哪一步了。 */
+export async function getEnvironmentUpgradeStatus(): Promise<EnvironmentUpgradeResponse> {
+  return fetchApi<EnvironmentUpgradeResponse>('/system/environment/upgrade');
 }

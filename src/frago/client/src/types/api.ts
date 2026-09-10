@@ -1005,3 +1005,53 @@ export interface TmuxSessionsCount {
   total: number;
   total_memory_mb: number;
 }
+
+/**
+ * 环境仪表盘的一格。
+ *
+ * 两个版本号都可能为空，含义不同：`current` 空是这台机器上没装，`latest` 空是外面
+ * 没有可查的版本源（WorkBuddy 只发桌面版）。界面两种都画成「—」，但前者要标成缺失。
+ */
+export interface EnvironmentItem {
+  id: string;
+  name: string;
+  /** frago 本体 / 必装 / 选装 / agent 命令行，决定它排在哪一组 */
+  group: 'frago' | 'required' | 'optional' | 'agent';
+  required: boolean;
+  installed: boolean;
+  current: string | null;
+  latest: string | null;
+  outdated: boolean;
+}
+
+export interface EnvironmentResponse {
+  items: EnvironmentItem[];
+  os: string;
+  /** frago 自己从哪儿装的：local 本地构建、index 索引、unknown */
+  frago_source: 'local' | 'index' | 'unknown' | string;
+  /** 外面那批版本号上次问到的时间，unix 秒 */
+  checked_at: number | null;
+}
+
+/**
+ * 一样东西这一轮升级到哪一步了。
+ *
+ * 五档：pending 排着队、running 正在跑、ok 升成了、skipped 不用升、failed 没升成。
+ * `message` 是给人看的那句结论，失败时它说的是卡在哪。
+ */
+export interface EnvironmentUpgradeItemState {
+  state: 'pending' | 'running' | 'ok' | 'skipped' | 'failed' | string;
+  message: string;
+  before: string | null;
+  after: string | null;
+}
+
+export interface EnvironmentUpgradeResponse {
+  /** 提交时才有意义：已经有一批在跑时为 false，返回的是那一批的进度 */
+  accepted: boolean;
+  running: boolean;
+  order: string[];
+  items: Record<string, EnvironmentUpgradeItemState>;
+  started_at: number | null;
+  finished_at: number | null;
+}
