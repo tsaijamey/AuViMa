@@ -4,7 +4,12 @@ Tests pure functions that handle path encoding/decoding and session file identif
 """
 import pytest
 
-from frago.session.sync import encode_project_path, is_main_session_file
+from frago.session.sync import (
+    encode_project_path,
+    is_backed_up_session_file,
+    is_main_session_file,
+    is_subagent_session_file,
+)
 
 
 class TestEncodeProjectPath:
@@ -103,3 +108,52 @@ class TestIsMainSessionFile:
     def test_just_extension(self):
         """Test that just extension is rejected."""
         assert not is_main_session_file(".jsonl")
+
+
+class TestIsSubagentSessionFile:
+    """Subagent transcripts are recognised by prefix alone, never by id shape."""
+
+    @pytest.mark.parametrize(
+        "filename",
+        [
+            # 17-character ids, the shape Claude Code writes today.
+            "agent-aa0687c23caa71f2b.jsonl",
+            "agent-a516520d772f61231.jsonl",
+            # 7-character ids, still sitting in this machine's backup.
+            "agent-a013ea8.jsonl",
+            # Ids carrying a purpose in the name.
+            "agent-acompact-20dfdaa9dfa2aa54.jsonl",
+            "agent-aprompt_suggestion-ffbcba.jsonl",
+        ],
+        ids=["17-hex", "17-hex-2", "7-hex", "compact", "prompt-suggestion"],
+    )
+    def test_every_id_generation_is_accepted(self, filename: str):
+        """Pinning one generation's id shape is what lets the next one go missing."""
+        assert is_subagent_session_file(filename)
+
+    def test_main_sessions_are_not_subagents(self):
+        assert not is_subagent_session_file("550e8400-e29b-41d4-a716-446655440000.jsonl")
+
+    def test_non_jsonl_rejected(self):
+        assert not is_subagent_session_file("agent-aa0687c23caa71f2b.json")
+        assert not is_subagent_session_file("agent-aa0687c23caa71f2b")
+
+    def test_prefix_without_an_id_rejected(self):
+        assert not is_subagent_session_file("agent-.jsonl")
+
+    def test_unrelated_name_rejected(self):
+        assert not is_subagent_session_file("agents.jsonl")
+        assert not is_subagent_session_file("")
+
+
+class TestIsBackedUpSessionFile:
+    """The one predicate that decides whether a transcript gets copied."""
+
+    def test_both_kinds_are_copied(self):
+        assert is_backed_up_session_file("550e8400-e29b-41d4-a716-446655440000.jsonl")
+        assert is_backed_up_session_file("agent-aa0687c23caa71f2b.jsonl")
+
+    def test_everything_else_is_not(self):
+        assert not is_backed_up_session_file("random-name.jsonl")
+        assert not is_backed_up_session_file("session.json")
+        assert not is_backed_up_session_file(".jsonl")

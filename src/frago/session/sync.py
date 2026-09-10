@@ -18,6 +18,18 @@ out of step with the bytes. Each cycle compares the two files and picks one of:
 Source files are located by session id every cycle rather than by a remembered
 path: a session resumed from another directory moves to a different Claude Code
 project folder, and a remembered path would read as "the source is gone".
+
+**Subagents are backed up too, and by the same rules.** A conversation Claude Code
+farms out to a subagent is written to its own transcript, one level deeper —
+``<project>/<parent session id>/subagents/agent-<id>.jsonl``. Those transcripts get
+rolled away exactly like the main ones, so they need the same copy; each is backed
+up under its own id (``agent-<id>``), alongside the main sessions, because the whole
+point of the copy is that the content search can still reach it once the original
+is gone.
+
+Both places are named explicitly rather than walked recursively: a project folder
+holds a thousand-odd sessions, and re-walking all of it every half minute would
+keep the machine busy for nothing.
 """
 
 import logging
@@ -105,6 +117,31 @@ def is_main_session_file(filename: str) -> bool:
         return False
 
 
+def is_subagent_session_file(filename: str) -> bool:
+    """Is this a subagent transcript?
+
+    Subagent transcripts are named ``agent-<id>.jsonl`` — an ``agent-`` prefix
+    followed by a short id Claude Code hands out. The id's length and alphabet have
+    changed several times (this machine's backup holds 7-character and 17-character
+    ones side by side, plus ``acompact-`` / ``aprompt_suggestion-`` variants that
+    carry a purpose in the name), so only the prefix and the extension are checked.
+    Pinning down one generation's id shape is what makes the next format change go
+    silently unnoticed — which is the defect being fixed here.
+    """
+    if not filename.endswith(".jsonl"):
+        return False
+    return filename.startswith("agent-") and len(filename) > len("agent-.jsonl")
+
+
+def is_backed_up_session_file(filename: str) -> bool:
+    """Does this transcript get copied at all?
+
+    Main sessions and subagent transcripts both do; anything else in a project
+    folder (Claude Code writes other bookkeeping there) does not.
+    """
+    return is_main_session_file(filename) or is_subagent_session_file(filename)
+
+
 def raw_backup_path(session_id: str) -> Path:
     """Where this session's copy lives.
 
@@ -182,8 +219,8 @@ def sync_session(jsonl_path: Path, force: bool = False) -> str | None:
         logger.debug(f"No changes for session: {session_id}")
         return None
 
-    # Sidechain transcripts (agent-*.jsonl) are excluded by is_main_session_file
-    # before we get here; nothing else about the content needs inspecting.
+    # Which transcripts get here is decided by is_backed_up_session_file, on the
+    # file name alone; nothing about the content needs inspecting.
 
     logger.info(f"Backed up session: {session_id} ({action})")
     return session_id
@@ -213,17 +250,37 @@ def sync_project_sessions(
     return _sync_dir(claude_dir, force, mtime_cache)
 
 
+def _session_files(claude_dir: Path) -> list[Path]:
+    """Every transcript in one Claude Code project folder that gets a copy.
+
+    Two places, both spelled out rather than walked recursively (see the module
+    docstring): the folder's own top level holds the main sessions, and
+    ``<session id>/subagents/`` holds the subagents that session farmed work out to.
+
+    The two passes fail independently. If the subagent pass cannot be read, the main
+    sessions are still backed up that cycle — the newer half of the job must never be
+    able to stop the half that has been working all along.
+    """
+    files: list[Path] = []
+    for pattern in ("*.jsonl", "*/subagents/*.jsonl"):
+        try:
+            files.extend(claude_dir.glob(pattern))
+        except OSError as e:
+            logger.warning(f"Scan failed {claude_dir}/{pattern}: {e}")
+    return files
+
+
 def _sync_dir(
     claude_dir: Path,
     force: bool = False,
     mtime_cache: dict[str, float] | None = None,
 ) -> SyncResult:
-    """Back up every main session transcript sitting in one Claude Code folder."""
+    """Back up every transcript sitting in one Claude Code project folder."""
     result = SyncResult()
 
     # Scan all JSONL files
-    for jsonl_file in claude_dir.glob("*.jsonl"):
-        if not is_main_session_file(jsonl_file.name):
+    for jsonl_file in _session_files(claude_dir):
+        if not is_backed_up_session_file(jsonl_file.name):
             continue
 
         try:

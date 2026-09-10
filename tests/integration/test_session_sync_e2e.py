@@ -96,6 +96,126 @@ class TestBackupIsByteForByte:
         assert backup.read_bytes() == source.read_bytes()
 
 
+class TestSubagentTranscriptsAreBackedUpToo:
+    """A conversation farmed out to a subagent gets rolled away like any other.
+
+    Claude Code writes it one level deeper — ``<project>/<parent id>/subagents/`` —
+    so the scan has to look there as well, and the file name filter has to let it
+    through. Missing either one is what kept every subagent conversation out of the
+    backup.
+    """
+
+    def _write(self, path: Path, session_id: str, count: int) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "".join(
+                json.dumps(
+                    {"type": "user", "sessionId": session_id, "message": {"content": f"line {i}"}},
+                    ensure_ascii=False,
+                )
+                + "\n"
+                for i in range(count)
+            ),
+            encoding="utf-8",
+        )
+
+    def _project(self, tmp_path: Path) -> tuple[Path, str, Path, str, Path]:
+        """A project folder holding one main session and one subagent under it."""
+        project = tmp_path / "-Users-someone-Repos-thing"
+        parent_id = str(uuid.uuid4())
+        main_source = project / f"{parent_id}.jsonl"
+        self._write(main_source, parent_id, 3)
+
+        child_id = "agent-aa0687c23caa71f2b"
+        child_source = project / parent_id / "subagents" / f"{child_id}.jsonl"
+        self._write(child_source, child_id, 4)
+        return project, parent_id, main_source, child_id, child_source
+
+    def test_both_land_in_the_backup_byte_for_byte(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("FRAGO_SESSION_DIR", str(tmp_path / "sessions"))
+        project, parent_id, main_source, child_id, child_source = self._project(tmp_path)
+
+        result = sync_mod._sync_dir(project)
+
+        assert result.synced == 2
+        assert sync_mod.raw_backup_path(parent_id).read_bytes() == main_source.read_bytes()
+        assert sync_mod.raw_backup_path(child_id).read_bytes() == child_source.read_bytes()
+
+    def test_subagent_keeps_its_own_id_beside_the_main_sessions(self, tmp_path, monkeypatch):
+        """Flat, one directory per transcript — the shape the content search reads."""
+        monkeypatch.setenv("FRAGO_SESSION_DIR", str(tmp_path / "sessions"))
+        project, _, _, child_id, _ = self._project(tmp_path)
+
+        sync_mod._sync_dir(project)
+
+        backup = sync_mod.raw_backup_path(child_id)
+        assert backup.name == "raw.jsonl"
+        assert backup.parent.name == child_id
+        assert backup.parent.parent.name == "claude"
+
+    def test_a_growing_subagent_transcript_is_appended_not_duplicated(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("FRAGO_SESSION_DIR", str(tmp_path / "sessions"))
+        project, _, _, child_id, child_source = self._project(tmp_path)
+        sync_mod._sync_dir(project)
+
+        assert sync_mod._sync_dir(project).updated == 0  # nothing moved on
+
+        with child_source.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"type": "assistant", "sessionId": child_id}) + "\n")
+
+        assert sync_mod._sync_dir(project).updated == 1
+        assert sync_mod.raw_backup_path(child_id).read_bytes() == child_source.read_bytes()
+
+    def test_a_rewritten_subagent_transcript_is_copied_again(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("FRAGO_SESSION_DIR", str(tmp_path / "sessions"))
+        project, _, _, child_id, child_source = self._project(tmp_path)
+        sync_mod._sync_dir(project)
+
+        self._write(child_source, child_id, 2)
+        sync_mod._sync_dir(project)
+
+        assert sync_mod.raw_backup_path(child_id).read_bytes() == child_source.read_bytes()
+
+    def test_unchanged_subagents_are_skipped_before_any_read(self, tmp_path, monkeypatch):
+        """Subagents share the one mtime cache; they do not get a scan of their own."""
+        monkeypatch.setenv("FRAGO_SESSION_DIR", str(tmp_path / "sessions"))
+        project, parent_id, _, child_id, _ = self._project(tmp_path)
+        cache: dict[str, float] = {}
+
+        sync_mod._sync_dir(project, mtime_cache=cache)
+        assert set(cache) == {parent_id, child_id}
+
+        assert sync_mod._sync_dir(project, mtime_cache=cache).skipped == 2
+
+    def test_a_failing_subagent_scan_leaves_main_sessions_backed_up(self, tmp_path, monkeypatch):
+        """The newer half of the job must never stop the half that was already working."""
+        monkeypatch.setenv("FRAGO_SESSION_DIR", str(tmp_path / "sessions"))
+        project, parent_id, main_source, child_id, _ = self._project(tmp_path)
+
+        real_glob = Path.glob
+
+        def refuse_subagents(self, pattern, *args, **kwargs):
+            if "subagents" in pattern:
+                raise OSError("permission denied")
+            return real_glob(self, pattern, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "glob", refuse_subagents)
+
+        result = sync_mod._sync_dir(project)
+
+        assert result.synced == 1
+        assert sync_mod.raw_backup_path(parent_id).read_bytes() == main_source.read_bytes()
+        assert not sync_mod.raw_backup_path(child_id).exists()
+
+    def test_other_files_in_the_project_folder_are_still_ignored(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("FRAGO_SESSION_DIR", str(tmp_path / "sessions"))
+        project, _, _, _, _ = self._project(tmp_path)
+        (project / "notes.jsonl").write_text('{"x":1}\n', encoding="utf-8")
+        (project / "agent-.jsonl").write_text('{"x":1}\n', encoding="utf-8")
+
+        assert sync_mod._sync_dir(project).synced == 2
+
+
 class TestProjectPathEncoding:
     """Only the encode direction is used; decoding a folder name is not possible.
 
